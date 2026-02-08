@@ -161,7 +161,6 @@ Comment {
 
 - **Ошибки доступа к ресурсам**
 
-## 👥 Авторы
+## 👥 Автор
 
-- **Сергеев Александр** - Team Lead, [@AlksSrg](https://github.com/AlksSrg)
-- **Лучик Антон** - [@Intemic](https://github.com/Intemic)
+- **Сергеев Александр** - [@AlksSrg](https://github.com/AlksSrg)
