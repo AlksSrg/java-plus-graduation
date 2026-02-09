@@ -9,7 +9,7 @@
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
-    <artifactId>main-service</artifactId>
+    <artifactId>core</artifactId>
 
     <properties>
         <mapstruct.version>1.5.5.Final</mapstruct.version>
@@ -54,7 +54,6 @@
             <scope>provided</scope>
             <optional>true</optional>
         </dependency>
-        <!-- MapStruct dependencies -->
         <dependency>
             <groupId>org.mapstruct</groupId>
             <artifactId>mapstruct</artifactId>
@@ -96,27 +95,21 @@
                 <version>3.11.0</version>
                 <configuration>
                     <annotationProcessorPaths>
-                        <!-- MapStruct Annotation Processor -->
                         <path>
                             <groupId>org.mapstruct</groupId>
                             <artifactId>mapstruct-processor</artifactId>
                             <version>${mapstruct.version}</version>
                         </path>
-
-                        <!-- Lombok Annotation Processor -->
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
                             <version>${lombok.version}</version>
                         </path>
-
-                        <!-- Binding для Lombok и MapStruct -->
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok-mapstruct-binding</artifactId>
                             <version>${lombok-mapstruct-binding.version}</version>
                         </path>
-
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
