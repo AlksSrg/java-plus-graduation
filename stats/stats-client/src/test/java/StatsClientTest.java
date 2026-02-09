@@ -6,22 +6,43 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
+import org.springframework.retry.support.RetryTemplate;
+import org.springframework.retry.support.RetryTemplateBuilder;
 import ru.practicum.StatsClient;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 class StatsClientTest {
     private MockWebServer mockWebServer;
     private StatsClient statsClient;
     private final ObjectMapper mapper = new ObjectMapper();
 
+    @Mock
+    private DiscoveryClient discoveryClient;
+
     @BeforeEach
     public void beforeEach() throws IOException {
         mockWebServer = new MockWebServer();
         mockWebServer.start();
-        statsClient = new StatsClient(mockWebServer.url("/").toString());
+
+        discoveryClient = mock(DiscoveryClient.class);
+
+        RetryTemplate retryTemplate = new RetryTemplateBuilder()
+                .maxAttempts(1)
+                .build();
+
+        statsClient = new StatsClient(
+                "test-stats-server",
+                discoveryClient,
+                retryTemplate
+        );
     }
 
     @Test
