@@ -96,6 +96,9 @@ public class RequestServiceImpl implements RequestService {
     }
 
     private Event getEventById(Long eventId) {
+        if (eventId <= 0) {
+            throw new NotFoundResource("Событие с id=" + eventId + " не найдено");
+        }
         return eventRepository.findById(eventId)
                 .orElseThrow(() -> new NotFoundResource("Событие с id=" + eventId + " не найдено"));
     }
