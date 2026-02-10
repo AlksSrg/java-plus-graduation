@@ -1,0 +1,20 @@
+spring:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+  datasource:
+    driverClassName: "org.postgresql.Driver"
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:9032/stats}
+    username: ${SPRING_DATASOURCE_USERNAME:stats}
+    password: ${SPRING_DATASOURCE_PASSWORD:stats}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: info
+
+server:
+  port: 0

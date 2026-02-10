@@ -4,30 +4,55 @@ import dto.EndpointHitDto;
 import dto.ViewStatsDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Component;
+import org.springframework.retry.support.RetryTemplate;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.util.UriComponents;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 
 @Slf4j
-@Component
 public class StatsClient {
     private final RestClient restClient;
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private final DiscoveryClient discoveryClient;
+    private final String statsServerId;
+    private final RetryTemplate retryTemplate;
+    private final String baseUrl;
 
-    public StatsClient(@Value("${stats-client.url:http://localhost:9090}") String uriBase) {
-        this.restClient = RestClient.builder()
-                .baseUrl(uriBase)
-                .build();
+    // Конструктор для использования с DiscoveryClient
+    public StatsClient(@Value("${stats-client.id}") String statsServerId,
+                       DiscoveryClient discoveryClient,
+                       RetryTemplate retryTemplate) {
+        this.statsServerId = statsServerId;
+        this.discoveryClient = discoveryClient;
+        this.retryTemplate = retryTemplate;
+        this.restClient = RestClient.builder().build();
+        this.baseUrl = null;
+    }
+
+    // Конструктор для тестирования (без DiscoveryClient)
+    public StatsClient(String baseUrl, RetryTemplate retryTemplate) {
+        this.statsServerId = null;
+        this.discoveryClient = null;
+        this.retryTemplate = retryTemplate;
+        this.restClient = RestClient.builder().build();
+        this.baseUrl = baseUrl;
     }
 
     /**
@@ -54,8 +79,9 @@ public class StatsClient {
                 .build();
 
         try {
+            URI requestUri = makeUri("/hit");
             ResponseEntity<Void> response = restClient.post()
-                    .uri("/hit")
+                    .uri(requestUri)
                     .contentType(APPLICATION_JSON)
                     .body(endpointHit)
                     .retrieve()
@@ -65,7 +91,10 @@ public class StatsClient {
             log.error("Сервер не доступен");
             return false;
         } catch (RestClientException ex) {
-            log.error(ex.getMessage());
+            log.error("Ошибка при сохранении статистики: {}", ex.getMessage());
+            return false;
+        } catch (RuntimeException ex) {
+            log.error("Ошибка: {}", ex.getMessage());
             return false;
         }
     }
@@ -93,37 +122,93 @@ public class StatsClient {
      */
     public List<ViewStatsDto> getStats(LocalDateTime start, LocalDateTime end, List<String> uris, boolean unique) {
         if (start == null || end == null || end.isBefore(start)) {
-            log.error("Дата окнчания раньше даты начала");
-            return List.of();
+            log.error("Дата окончания раньше даты начала");
+            return Collections.emptyList();
         }
 
-        log.info("Запрашиваем статистику : start - %s, end - %s, uris - %s, unique - %b"
-                .formatted(start.format(DATE_TIME_FORMATTER), end.format(DATE_TIME_FORMATTER), uris, unique));
+        log.info("Запрашиваем статистику : start - {}, end - {}, uris - {}, unique - {}",
+                start.format(DATE_TIME_FORMATTER), end.format(DATE_TIME_FORMATTER), uris, unique);
+
+        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        params.add("start", start.format(DATE_TIME_FORMATTER));
+        params.add("end", end.format(DATE_TIME_FORMATTER));
+        params.add("unique", Boolean.toString(unique));
+
+        if (uris != null && !uris.isEmpty()) {
+            params.add("uris", String.join(",", uris));
+        }
 
         try {
+            URI requestUri = makeUri("/stats", params);
             List<ViewStatsDto> views = restClient.get()
-                    //.uri("/stats", uriVariables)
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/stats")  //
-                            .queryParam("start", start.format(DATE_TIME_FORMATTER))
-                            .queryParam("end", end.format(DATE_TIME_FORMATTER))
-                            .queryParam("unique", unique)
-                            .queryParam("uris", uris != null ? String.join(",", uris) : "")
-                            .build()
-                    )
-                    .header("Content-Type", "application/json")
+                    .uri(requestUri)
                     .retrieve()
                     .body(new ParameterizedTypeReference<List<ViewStatsDto>>() {
                     });
 
-            log.info("Результат - %s".formatted(views.toString()));
-            return views;
+            if (views != null) {
+                log.info("Получено {} записей статистики", views.size());
+                return views;
+            } else {
+                return Collections.emptyList();
+            }
         } catch (ResourceAccessException ex) {
             log.error("Сервер не доступен");
-            return List.of();
+            return Collections.emptyList();
         } catch (RestClientException ex) {
-            log.error(ex.getMessage());
-            return List.of();
+            log.error("Ошибка при получении статистики: {}", ex.getMessage());
+            return Collections.emptyList();
+        } catch (RuntimeException ex) {
+            log.error("Ошибка: {}", ex.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    private URI makeUri(String path) {
+        return makeUri(path, null);
+    }
+
+    private URI makeUri(String path, MultiValueMap<String, String> params) {
+        try {
+            String host;
+            int port;
+            if (baseUrl != null && !baseUrl.isEmpty()) {
+                UriComponents baseComponents = UriComponentsBuilder.fromHttpUrl(baseUrl).build();
+                host = baseComponents.getHost();
+                port = baseComponents.getPort() != -1 ? baseComponents.getPort() : 80;
+            } else {
+                ServiceInstance instance = retryTemplate.execute(context -> getInstance());
+                host = instance.getHost();
+                port = instance.getPort();
+            }
+
+            UriComponentsBuilder uriBuilder = UriComponentsBuilder.newInstance()
+                    .scheme("http")
+                    .host(host)
+                    .port(port)
+                    .path(path);
+
+            if (params != null) {
+                uriBuilder.queryParams(params);
+            }
+
+            return uriBuilder.build().toUri();
+        } catch (Exception ex) {
+            log.error("Ошибка при создании URI: {}", ex.getMessage());
+            throw new RuntimeException("Сервис статистики не доступен");
+        }
+    }
+
+    private ServiceInstance getInstance() {
+        try {
+            List<ServiceInstance> instances = discoveryClient.getInstances(statsServerId);
+            if (instances == null || instances.isEmpty()) {
+                throw new RuntimeException("Сервер статистики не найден");
+            }
+            return instances.getFirst();
+        } catch (Exception ex) {
+            log.error("Сервер статистики не найден: {}", ex.getMessage());
+            throw new RuntimeException("Сервер статистики не найден");
         }
     }
 }
