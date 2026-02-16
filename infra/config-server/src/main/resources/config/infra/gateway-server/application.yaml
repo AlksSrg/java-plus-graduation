@@ -7,34 +7,95 @@ spring:
       default-filters:
         - CircuitBreaker=myCircuitBreaker
       routes:
-        - id: admin_route
-          uri: lb://main-service
+        # Маршруты для user-service
+        - id: user-service-admin
+          uri: lb://user-service
           predicates:
-            - Path=/admin/**
-        - id: categories_route
-          uri: lb://main-service
+            - Path=/admin/users/**
+          filters:
+            - StripPrefix=1
+
+        # Маршруты для category-service
+        - id: category-service-admin
+          uri: lb://category-service
+          predicates:
+            - Path=/admin/categories/**
+          filters:
+            - StripPrefix=1
+        - id: category-service-public
+          uri: lb://category-service
           predicates:
             - Path=/categories/**
-        - id: users_route
-          uri: lb://main-service
+
+        # Маршруты для event-service
+        - id: event-service-admin
+          uri: lb://event-service
           predicates:
-            - Path=/users/**
-        - id: events_route
-          uri: lb://main-service
+            - Path=/admin/events/**
+          filters:
+            - StripPrefix=1
+        - id: event-service-private
+          uri: lb://event-service
+          predicates:
+            - Path=/users/{userId}/events/**
+          filters:
+            - StripPrefix=1
+        - id: event-service-public
+          uri: lb://event-service
           predicates:
             - Path=/events/**
-        - id: compilations_route
-          uri: lb://main-service
+          filters:
+            - StripPrefix=0
+
+        # Маршруты для request-service (заявки на участие)
+        - id: request-service-private
+          uri: lb://request-service
+          predicates:
+            - Path=/users/{userId}/requests/**
+          filters:
+            - StripPrefix=1
+        - id: request-service-event-owner
+          uri: lb://request-service
+          predicates:
+            - Path=/users/{userId}/events/{eventId}/requests/**
+          filters:
+            - StripPrefix=1
+
+        # Маршруты для compilation-service
+        - id: compilation-service-admin
+          uri: lb://compilation-service
+          predicates:
+            - Path=/admin/compilations/**
+          filters:
+            - StripPrefix=1
+        - id: compilation-service-public
+          uri: lb://compilation-service
           predicates:
             - Path=/compilations/**
-        - id: stats_hit_route
+
+        # Маршруты для comment-service
+        - id: comment-service-private
+          uri: lb://comment-service
+          predicates:
+            - Path=/users/{userId}/comments/**
+          filters:
+            - StripPrefix=1
+        - id: comment-service-public
+          uri: lb://comment-service
+          predicates:
+            - Path=/events/{eventId}/comments
+          filters:
+            - StripPrefix=1
+
+        # Маршруты для stats-server
+        - id: stats-hit-route
           uri: lb://stats-server
           predicates:
             - Path=/hit
-        - id: stats_stat_route
+        - id: stats-stats-route
           uri: lb://stats-server
           predicates:
-            - Path=/stats**
+            - Path=/stats/**
 
 resilience4j:
   circuitbreaker:
@@ -50,3 +111,9 @@ resilience4j:
 
 server:
   port: 8080
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.web: DEBUG
+    ru.practicum: DEBUG

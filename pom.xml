@@ -12,12 +12,15 @@
 
 	<name>Explore With Me</name>
 	<modules>
-		<module>core</module>
-		<module>stats</module>
-		<module>infra</module>
+		<!-- Основные модули верхнего уровня -->
+		<module>core</module>              <!-- Содержит все микросервисы и общие модули -->
+		<module>stats</module>              <!-- Модуль статистики -->
+		<module>infra</module>              <!-- Инфраструктурные модули -->
+
 		<module>infra/config-server</module>
 		<module>infra/gateway-server</module>
 		<module>infra/discovery-server</module>
+
 	</modules>
 
 	<groupId>ru.practicum</groupId>
