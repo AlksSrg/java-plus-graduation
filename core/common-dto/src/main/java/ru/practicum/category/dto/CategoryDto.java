@@ -1,8 +1,6 @@
 package ru.practicum.category.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
@@ -18,11 +16,9 @@ import lombok.*;
 @AllArgsConstructor
 public class CategoryDto {
 
-    @Positive
-    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Long id;
 
-    @Size(min = 1, max = 50)
-    @NotBlank
+    @NotBlank(message = "Category name cannot be empty")
+    @Size(min = 1, max = 50, message = "Category name must contain from {min} to {max} characters")
     private String name;
 }

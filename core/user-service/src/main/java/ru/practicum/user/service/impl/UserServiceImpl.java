@@ -1,6 +1,7 @@
 package ru.practicum.user.service.impl;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -24,6 +25,7 @@ import java.util.List;
  * <p>
  * Обеспечивает бизнес-логику управления пользователями.
  */
+@Slf4j
 @RequiredArgsConstructor
 @Service
 @Transactional(readOnly = true)
@@ -38,6 +40,9 @@ public class UserServiceImpl implements UserService {
      */
     @Override
     public List<UserDto> getUsers(UserGetParam userGetParam) {
+        log.info("Getting users with params: ids={}, from={}, size={}",
+                userGetParam.getIds(), userGetParam.getFrom(), userGetParam.getSize());
+
         List<User> users;
 
         if (userGetParam.getIds() != null && !userGetParam.getIds().isEmpty()) {
@@ -61,8 +66,23 @@ public class UserServiceImpl implements UserService {
      */
     @Override
     public User getUserById(Long userId) {
+        log.info("Getting user by id: {}", userId);
         return userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundResource("Пользователь с id=" + userId + " не найден"));
+    }
+
+    /**
+     * Получает DTO пользователя по идентификатору.
+     *
+     * @param userId идентификатор пользователя
+     * @return DTO пользователя
+     * @throws NotFoundResource если пользователь не найден
+     */
+    @Override
+    public UserDto getUserDtoById(Long userId) {
+        log.info("Getting user DTO by id: {}", userId);
+        User user = getUserById(userId);
+        return UserMapper.mapToDto(user);
     }
 
     /**
@@ -75,6 +95,8 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserDto createUser(NewUserRequest newUserRequest) {
+        log.info("Creating new user: {}", newUserRequest);
+
         userRepository.findByEmailContainingIgnoreCase(newUserRequest.getEmail())
                 .ifPresent(user -> {
                     throw new ConflictResource("Пользователь с email '" + newUserRequest.getEmail() + "' уже существует");
@@ -83,6 +105,7 @@ public class UserServiceImpl implements UserService {
         User user = UserMapper.mapToUser(newUserRequest);
         User savedUser = userRepository.save(user);
 
+        log.info("Created user with id: {}", savedUser.getId());
         return UserMapper.mapToDto(savedUser);
     }
 
@@ -96,10 +119,13 @@ public class UserServiceImpl implements UserService {
     @Transactional
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteUser(Long userId) {
+        log.info("Deleting user with id: {}", userId);
+
         if (!userRepository.existsById(userId)) {
             throw new NotFoundResource("Пользователь с id=" + userId + " не найден");
         }
 
         userRepository.deleteById(userId);
+        log.info("Deleted user with id: {}", userId);
     }
 }

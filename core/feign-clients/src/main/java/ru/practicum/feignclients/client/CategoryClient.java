@@ -3,10 +3,7 @@ package ru.practicum.feignclients.client;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestParam;
 import ru.practicum.category.dto.CategoryDto;
-
-import java.util.List;
 
 /**
  * Feign-клиент для взаимодействия с Category Service.
@@ -22,13 +19,4 @@ public interface CategoryClient {
      */
     @GetMapping("/{catId}")
     CategoryDto getCategoryById(@PathVariable("catId") long catId);
-
-    /**
-     * Получает список категорий по идентификаторам.
-     *
-     * @param ids список идентификаторов категорий
-     * @return список DTO категорий
-     */
-    @GetMapping("/by-ids")
-    List<CategoryDto> getCategoriesByIds(@RequestParam("ids") List<Long> ids);
 }

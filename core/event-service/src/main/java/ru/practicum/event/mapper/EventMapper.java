@@ -8,15 +8,12 @@ import ru.practicum.event.util.State;
 import ru.practicum.user.dto.UserShortDto;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 
 /**
  * Маппер для преобразования между сущностями и DTO событий.
  */
 @UtilityClass
 public class EventMapper {
-
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
      * Преобразует DTO в сущность события.
@@ -75,9 +72,9 @@ public class EventMapper {
                 .participantLimit(event.getParticipantLimit())
                 .requestModeration(event.getRequestModeration())
                 .state(event.getState())
-                .eventDate(formatDateTime(event.getEventDate()))
-                .createdOn(formatDateTime(event.getCreatedOn()))
-                .publishedOn(formatDateTime(event.getPublishedOn()))
+                .eventDate(event.getEventDate())
+                .createdOn(event.getCreatedOn())
+                .publishedOn(event.getPublishedOn())
                 .confirmedRequests(event.getConfirmedRequests())
                 .views(event.getViews())
                 .build();
@@ -103,7 +100,7 @@ public class EventMapper {
                 .category(categoryDto)
                 .initiator(userDto)
                 .paid(event.getPaid())
-                .eventDate(formatDateTime(event.getEventDate()))
+                .eventDate(event.getEventDate())
                 .confirmedRequests(event.getConfirmedRequests())
                 .views(event.getViews())
                 .build();
@@ -126,7 +123,7 @@ public class EventMapper {
                 .title(event.getTitle())
                 .annotation(event.getAnnotation())
                 .paid(event.getPaid())
-                .eventDate(formatDateTime(event.getEventDate()))
+                .eventDate(event.getEventDate())
                 .confirmedRequests(event.getConfirmedRequests())
                 .views(event.getViews())
                 .build();
@@ -160,9 +157,9 @@ public class EventMapper {
                 .participantLimit(event.getParticipantLimit())
                 .requestModeration(event.getRequestModeration())
                 .state(event.getState())
-                .eventDate(formatDateTime(event.getEventDate()))
-                .createdOn(formatDateTime(event.getCreatedOn()))
-                .publishedOn(formatDateTime(event.getPublishedOn()))
+                .eventDate(event.getEventDate())
+                .createdOn(event.getCreatedOn())
+                .publishedOn(event.getPublishedOn())
                 .confirmedRequests(confirmedRequests != null ? confirmedRequests : 0L)
                 .views(views != null ? views : 0L)
                 .build();
@@ -191,14 +188,10 @@ public class EventMapper {
                 .category(categoryDto)
                 .initiator(userDto)
                 .paid(event.getPaid())
-                .eventDate(formatDateTime(event.getEventDate()))
+                .eventDate(event.getEventDate())
                 .confirmedRequests(confirmedRequests != null ? confirmedRequests : 0L)
                 .views(views != null ? views : 0L)
                 .build();
-    }
-
-    private static String formatDateTime(LocalDateTime dateTime) {
-        return dateTime != null ? dateTime.format(FORMATTER) : null;
     }
 
     /**

@@ -1,5 +1,6 @@
 package ru.practicum.comment.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.*;
 import ru.practicum.event.dto.EventShortDto;
 import ru.practicum.user.dto.UserDto;
@@ -38,6 +39,7 @@ public class CommentDto {
     /**
      * Дата и время создания комментария.
      */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime created;
 
     /**

@@ -31,6 +31,14 @@ public interface UserService {
     User getUserById(Long userId);
 
     /**
+     * Получает DTO пользователя по идентификатору.
+     *
+     * @param userId идентификатор пользователя
+     * @return DTO пользователя
+     */
+    UserDto getUserDtoById(Long userId);
+
+    /**
      * Создает нового пользователя.
      *
      * @param newUserRequest данные для создания пользователя

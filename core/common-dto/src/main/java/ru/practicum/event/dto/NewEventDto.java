@@ -30,21 +30,18 @@ public class NewEventDto {
     private String description;
 
     @NotNull(message = "Дата и время должны быть заполнены")
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime eventDate;
 
     @NotNull(message = "Широта и долгота должны быть заполнены")
     private Location location;
 
-    @Builder.Default
-    private boolean paid = false;
+    private boolean paid;
 
-    @Builder.Default
     @PositiveOrZero
-    private int participantLimit = 0;
+    private int participantLimit;
 
-    @Builder.Default
-    private boolean requestModeration = true;
+    private boolean requestModeration;
 
     @NotBlank(message = "Заголовок события должен быть заполнен")
     @Size(min = 3, max = 120, message = "Заголовок события должен быть от 3 до 120 символов")

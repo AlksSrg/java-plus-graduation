@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -19,6 +20,7 @@ import java.util.List;
  * <p>
  * Предоставляет API для создания, получения и удаления пользователей.
  */
+@Slf4j
 @Validated
 @RequiredArgsConstructor
 @RestController
@@ -40,12 +42,24 @@ public class UserAdminController {
                                   @PositiveOrZero(message = "Значение не может быть меньше нуля") int from,
                                   @RequestParam(defaultValue = "10")
                                   @Positive(message = "Значение может быть только положительным") int size) {
-
+        log.info("GET /admin/users with ids={}, from={}, size={}", ids, from, size);
         return userService.getUsers(UserGetParam.builder()
                 .ids(ids)
                 .from(from)
                 .size(size)
                 .build());
+    }
+
+    /**
+     * Получает пользователя по идентификатору.
+     *
+     * @param userId идентификатор пользователя
+     * @return DTO пользователя
+     */
+    @GetMapping("/{userId}")
+    public UserDto getUserById(@PathVariable @Positive Long userId) {
+        log.info("GET /admin/users/{}", userId);
+        return userService.getUserDtoById(userId);
     }
 
     /**
@@ -57,6 +71,7 @@ public class UserAdminController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public UserDto createUser(@RequestBody @Valid NewUserRequest newUserRequest) {
+        log.info("POST /admin/users with body: {}", newUserRequest);
         return userService.createUser(newUserRequest);
     }
 
@@ -68,6 +83,7 @@ public class UserAdminController {
     @DeleteMapping("/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteUser(@PathVariable @Positive Long userId) {
+        log.info("DELETE /admin/users/{}", userId);
         userService.deleteUser(userId);
     }
 }

@@ -18,16 +18,7 @@ import lombok.*;
 @AllArgsConstructor
 public class UserDto {
 
-    @Positive
-    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Long id;
-
-    @NotBlank
-    @Size(min = 2, max = 250)
     private String name;
-
-    @Email
-    @NotBlank
-    @Size(min = 6, max = 254)
     private String email;
 }

@@ -25,7 +25,6 @@ public class NewCommentDto {
      * Идентификатор автора комментария.
      * Устанавливается автоматически из пути запроса, игнорируется при десериализации JSON.
      */
-    @JsonIgnore
     private Long authorId;
 
     /**

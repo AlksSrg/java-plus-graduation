@@ -23,14 +23,12 @@ public class UpdateCommentDto {
      * Идентификатор обновляемого комментария.
      * Устанавливается автоматически из пути запроса.
      */
-    @JsonIgnore
     private Long commentId;
 
     /**
      * Идентификатор автора комментария.
      * Устанавливается автоматически из пути запроса.
      */
-    @JsonIgnore
     private Long authorId;
 
     /**

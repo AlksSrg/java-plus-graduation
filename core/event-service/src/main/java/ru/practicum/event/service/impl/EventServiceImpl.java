@@ -33,8 +33,6 @@ import ru.practicum.user.dto.UserShortDto;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import static ru.practicum.event.specification.EventSpecification.*;
 
@@ -446,114 +444,89 @@ public class EventServiceImpl implements EventService {
         return EventMapper.toFullDto(event, categoryDto, userShortDto, confirmedRequests, views);
     }
 
+    /**
+     * Обогащает список событий дополнительными данными
+     */
     private List<EventShortDto> enrichEventsWithDetails(List<Event> events) {
         if (events.isEmpty()) {
             return Collections.emptyList();
         }
 
-        // Получаем ID категорий и пользователей
-        Set<Long> categoryIds = events.stream()
-                .map(Event::getCategoryId)
-                .collect(Collectors.toSet());
-        Set<Long> userIds = events.stream()
-                .map(Event::getInitiatorId)
-                .collect(Collectors.toSet());
-
-        // Получаем данные категорий
-        Map<Long, CategoryDto> categoryMap = categoryClient.getCategoriesByIds(new ArrayList<>(categoryIds))
-                .stream()
-                .collect(Collectors.toMap(CategoryDto::getId, Function.identity()));
-
-        // Получаем данные пользователей
-        Map<Long, UserDto> userMap = userClient.getUsersByIds(new ArrayList<>(userIds))
-                .stream()
-                .collect(Collectors.toMap(UserDto::getId, Function.identity()));
-
-        // Получаем количество подтвержденных запросов для всех событий
-        List<Long> eventIdList = events.stream().map(Event::getId).collect(Collectors.toList());
-        Map<Long, Long> confirmedRequestsMap = requestClient.countConfirmedRequestsByEventIds(eventIdList);
-
-        // Получаем просмотры для всех событий
-        Map<Long, Long> viewsMap = getViewsForEvents(events);
-
         List<EventShortDto> result = new ArrayList<>();
+
         for (Event event : events) {
-            CategoryDto categoryDto = categoryMap.get(event.getCategoryId());
-            UserDto userDto = userMap.get(event.getInitiatorId());
+            try {
+                // Получаем данные категории по одному ID
+                CategoryDto categoryDto = categoryClient.getCategoryById(event.getCategoryId());
 
-            if (categoryDto == null || userDto == null) {
-                log.warn("Skipping event {} due to missing category or user data", event.getId());
-                continue;
+                // Получаем данные пользователя по одному ID
+                UserDto userDto = userClient.getUserById(event.getInitiatorId());
+
+                if (categoryDto == null || userDto == null) {
+                    log.warn("Skipping event {} due to missing category or user data", event.getId());
+                    continue;
+                }
+
+                UserShortDto userShortDto = UserShortDto.builder()
+                        .id(userDto.getId())
+                        .name(userDto.getName())
+                        .build();
+
+                // Получаем количество подтвержденных запросов
+                Long confirmed = requestClient.countConfirmedRequestsByEventId(event.getId());
+
+                // Получаем просмотры
+                Long views = getViewsForEvent(event.getId());
+
+                result.add(EventMapper.toShortDto(event, categoryDto, userShortDto, confirmed, views));
+            } catch (Exception e) {
+                log.error("Error enriching event {}: {}", event.getId(), e.getMessage());
+                // Продолжаем со следующим событием
             }
-
-            UserShortDto userShortDto = UserShortDto.builder()
-                    .id(userDto.getId())
-                    .name(userDto.getName())
-                    .build();
-
-            Long confirmed = confirmedRequestsMap.getOrDefault(event.getId(), 0L);
-            Long views = viewsMap.getOrDefault(event.getId(), 0L);
-
-            result.add(EventMapper.toShortDto(event, categoryDto, userShortDto, confirmed, views));
-        }
-
-        // Сортируем по просмотрам, если нужно
-        if (!result.isEmpty() && events.stream().findFirst().map(Event::getState).orElse(null) == State.PUBLISHED) {
-            // Сортировка по VIEWS будет применена в контроллере
         }
 
         return result;
     }
 
+    /**
+     * Обогащает список событий до FullDto
+     */
     private List<EventFullDto> enrichEventsToFullDto(List<Event> events) {
         if (events.isEmpty()) {
             return Collections.emptyList();
         }
 
-        // Получаем ID категорий и пользователей
-        Set<Long> categoryIds = events.stream()
-                .map(Event::getCategoryId)
-                .collect(Collectors.toSet());
-        Set<Long> userIds = events.stream()
-                .map(Event::getInitiatorId)
-                .collect(Collectors.toSet());
-
-        // Получаем данные категорий
-        Map<Long, CategoryDto> categoryMap = categoryClient.getCategoriesByIds(new ArrayList<>(categoryIds))
-                .stream()
-                .collect(Collectors.toMap(CategoryDto::getId, Function.identity()));
-
-        // Получаем данные пользователей
-        Map<Long, UserDto> userMap = userClient.getUsersByIds(new ArrayList<>(userIds))
-                .stream()
-                .collect(Collectors.toMap(UserDto::getId, Function.identity()));
-
-        // Получаем количество подтвержденных запросов для всех событий
-        List<Long> eventIdList = events.stream().map(Event::getId).collect(Collectors.toList());
-        Map<Long, Long> confirmedRequestsMap = requestClient.countConfirmedRequestsByEventIds(eventIdList);
-
-        // Получаем просмотры для всех событий
-        Map<Long, Long> viewsMap = getViewsForEvents(events);
-
         List<EventFullDto> result = new ArrayList<>();
+
         for (Event event : events) {
-            CategoryDto categoryDto = categoryMap.get(event.getCategoryId());
-            UserDto userDto = userMap.get(event.getInitiatorId());
+            try {
+                // Получаем данные категории по одному ID
+                CategoryDto categoryDto = categoryClient.getCategoryById(event.getCategoryId());
 
-            if (categoryDto == null || userDto == null) {
-                log.warn("Skipping event {} due to missing category or user data", event.getId());
-                continue;
+                // Получаем данные пользователя по одному ID
+                UserDto userDto = userClient.getUserById(event.getInitiatorId());
+
+                if (categoryDto == null || userDto == null) {
+                    log.warn("Skipping event {} due to missing category or user data", event.getId());
+                    continue;
+                }
+
+                UserShortDto userShortDto = UserShortDto.builder()
+                        .id(userDto.getId())
+                        .name(userDto.getName())
+                        .build();
+
+                // Получаем количество подтвержденных запросов
+                Long confirmed = requestClient.countConfirmedRequestsByEventId(event.getId());
+
+                // Получаем просмотры
+                Long views = getViewsForEvent(event.getId());
+
+                result.add(EventMapper.toFullDto(event, categoryDto, userShortDto, confirmed, views));
+            } catch (Exception e) {
+                log.error("Error enriching event {}: {}", event.getId(), e.getMessage());
+                // Продолжаем со следующим событием
             }
-
-            UserShortDto userShortDto = UserShortDto.builder()
-                    .id(userDto.getId())
-                    .name(userDto.getName())
-                    .build();
-
-            Long confirmed = confirmedRequestsMap.getOrDefault(event.getId(), 0L);
-            Long views = viewsMap.getOrDefault(event.getId(), 0L);
-
-            result.add(EventMapper.toFullDto(event, categoryDto, userShortDto, confirmed, views));
         }
 
         return result;
@@ -582,31 +555,11 @@ public class EventServiceImpl implements EventService {
             return Collections.emptyMap();
         }
 
-        try {
-            List<String> uris = events.stream()
-                    .map(event -> String.format(EVENT_URI_PATTERN, event.getId()))
-                    .collect(Collectors.toList());
-
-            LocalDateTime start = events.stream()
-                    .map(Event::getCreatedOn)
-                    .min(LocalDateTime::compareTo)
-                    .orElse(LocalDateTime.now().minusYears(5));
-
-            LocalDateTime end = LocalDateTime.now();
-
-            List<ViewStatsDto> stats = statsClient.getStats(start, end, uris, true);
-
-            return stats.stream()
-                    .collect(Collectors.toMap(
-                            stat -> extractEventIdFromUri(stat.getUri()),
-                            ViewStatsDto::getHits,
-                            Long::sum
-                    ));
-        } catch (Exception e) {
-            log.warn("Failed to get views for events: {}", e.getMessage());
-            return events.stream()
-                    .collect(Collectors.toMap(Event::getId, e1 -> 0L));
+        Map<Long, Long> viewsMap = new HashMap<>();
+        for (Event event : events) {
+            viewsMap.put(event.getId(), getViewsForEvent(event.getId()));
         }
+        return viewsMap;
     }
 
     private Long extractEventIdFromUri(String uri) {
