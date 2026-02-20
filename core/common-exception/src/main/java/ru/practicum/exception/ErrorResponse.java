@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -17,11 +18,11 @@ public class ErrorResponse {
     private final String message;
     private final String reason;
     private final LocalDateTime timestamp;
-    private final Map<String, String> errors;
+    private final List<String> errors;
     private final String path;
 
     private ErrorResponse(String status, String message, String reason,
-                          LocalDateTime timestamp, Map<String, String> errors, String path) {
+                          LocalDateTime timestamp, List<String> errors, String path) {
         this.status = status;
         this.message = message;
         this.reason = reason;
@@ -60,12 +61,26 @@ public class ErrorResponse {
      *
      * @param status  HTTP статус
      * @param message сообщение об ошибке
+     * @param errors  список ошибок валидации
+     * @param path    путь запроса
+     * @return объект ErrorResponse
+     */
+    public static ErrorResponse validationError(String status, String message, List<String> errors, String path) {
+        return new ErrorResponse(status, message, "Validation failed", LocalDateTime.now(), errors, path);
+    }
+
+    /**
+     * Создает ответ с ошибкой валидации (для обратной совместимости).
+     *
+     * @param status  HTTP статус
+     * @param message сообщение об ошибке
      * @param errors  карта ошибок валидации
      * @param path    путь запроса
      * @return объект ErrorResponse
      */
     public static ErrorResponse validationError(String status, String message, Map<String, String> errors, String path) {
-        return new ErrorResponse(status, message, "Validation failed", LocalDateTime.now(), errors, path);
+        return new ErrorResponse(status, message, "Validation failed", LocalDateTime.now(),
+                errors != null ? errors.values().stream().toList() : null, path);
     }
 
     /**
@@ -85,7 +100,7 @@ public class ErrorResponse {
         private String message;
         private String reason;
         private LocalDateTime timestamp;
-        private Map<String, String> errors;
+        private List<String> errors;
         private String path;
 
         public Builder status(String status) {
@@ -108,8 +123,15 @@ public class ErrorResponse {
             return this;
         }
 
-        public Builder errors(Map<String, String> errors) {
+        public Builder errors(List<String> errors) {
             this.errors = errors;
+            return this;
+        }
+
+        public Builder errors(Map<String, String> errors) {
+            if (errors != null) {
+                this.errors = errors.values().stream().toList();
+            }
             return this;
         }
 
