@@ -12,7 +12,7 @@ import org.springframework.context.annotation.ComponentScan;
 @SpringBootApplication
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "ru.practicum.feignclients.client")
-@ComponentScan(basePackages = {"ru.practicum.category", "ru.practicum.exception"})
+@ComponentScan(basePackages = {"ru.practicum.category", "ru.practicum.exception", "ru.practicum.handler"})
 public class CategoryServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(CategoryServiceApplication.class, args);

@@ -14,7 +14,7 @@ import org.springframework.context.annotation.ComponentScan;
 @SpringBootApplication
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "ru.practicum.feignclients")
-@ComponentScan(basePackages = {"ru.practicum.user", "ru.practicum.exception.handler"})
+@ComponentScan(basePackages = {"ru.practicum.user", "ru.practicum.exception.handler", "ru.practicum.handler"})
 public class UserServiceApplication {
 
     /**

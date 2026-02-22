@@ -112,7 +112,7 @@ public interface EventService {
      */
     Event getEventById(long eventId);
 
-    // Новые методы для Feign-клиентов
+    // ========== Методы для Feign-клиентов ==========
 
     /**
      * Получает краткую информацию о событии по его идентификатору.
@@ -145,4 +145,14 @@ public interface EventService {
      * @return true если есть события с данной категорией
      */
     Boolean existsByCategoryId(Long categoryId);
+
+    /**
+     * Получает событие по идентификатору для внутренних вызовов.
+     * В отличие от getEventByPublic, этот метод не проверяет статус PUBLISHED,
+     * что позволяет другим микросервисам получать события на любом этапе жизненного цикла.
+     *
+     * @param eventId идентификатор события
+     * @return полное DTO события
+     */
+    EventFullDto getEventByIdInternal(long eventId);
 }

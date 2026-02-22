@@ -153,4 +153,52 @@ public class GlobalExceptionHandler {
 
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
     }
+
+    /**
+     * Обработка исключений типа BadRequestException (400).
+     *
+     * @param ex      исключение
+     * @param request запрос
+     * @return ответ с ошибкой
+     */
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ErrorResponse> handleBadRequest(BadRequestException ex, WebRequest request) {
+        log.error("Bad request: {}", ex.getMessage());
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.toString())
+                .message(ex.getMessage())
+                .reason("Incorrectly made request.")
+                .path(request.getDescription(false).replace("uri=", ""))
+                .build();
+
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Обработка отсутствия обязательного query параметра (400).
+     *
+     * @param ex      исключение
+     * @param request запрос
+     * @return ответ с ошибкой
+     */
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingParams(
+            org.springframework.web.bind.MissingServletRequestParameterException ex,
+            WebRequest request) {
+
+        log.error("Missing request parameter: {}", ex.getMessage());
+
+        String message = String.format("Required parameter '%s' of type %s is missing",
+                ex.getParameterName(), ex.getParameterType());
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.toString())
+                .message(message)
+                .reason("Incorrectly made request.")
+                .path(request.getDescription(false).replace("uri=", ""))
+                .build();
+
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
 }

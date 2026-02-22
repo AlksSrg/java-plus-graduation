@@ -13,16 +13,18 @@ import java.util.List;
  * Feign-клиент для взаимодействия с event-service.
  * Предоставляет методы для получения информации о событиях.
  */
-@FeignClient(name = "event-service", path = "/events")
+@FeignClient(name = "event-service")
 public interface EventClient {
 
     /**
      * Получает полную информацию о событии по его идентификатору.
+     * Используется для внутренних вызовов между микросервисами.
+     * В отличие от публичного эндпоинта, этот метод не проверяет статус PUBLISHED.
      *
      * @param eventId идентификатор события
      * @return полное DTO события
      */
-    @GetMapping("/{eventId}")
+    @GetMapping("/events/internal/{eventId}")
     EventFullDto getEventById(@PathVariable("eventId") Long eventId);
 
     /**
@@ -32,7 +34,7 @@ public interface EventClient {
      * @param eventId идентификатор события
      * @return краткое DTO события
      */
-    @GetMapping("/{eventId}/short")
+    @GetMapping("/events/{eventId}/short")
     EventShortDto getEventShortById(@PathVariable("eventId") Long eventId);
 
     /**
@@ -41,7 +43,7 @@ public interface EventClient {
      * @param eventIds список идентификаторов событий
      * @return список кратких DTO событий
      */
-    @GetMapping("/by-ids")
+    @GetMapping("/events/by-ids")
     List<EventShortDto> getEventsByIds(@RequestParam("ids") List<Long> eventIds);
 
     /**
@@ -50,7 +52,7 @@ public interface EventClient {
      * @param eventId идентификатор события
      * @return true если событие существует
      */
-    @GetMapping("/{eventId}/exists")
+    @GetMapping("/events/{eventId}/exists")
     Boolean existsEventById(@PathVariable("eventId") Long eventId);
 
     /**
@@ -59,6 +61,6 @@ public interface EventClient {
      * @param categoryId идентификатор категории
      * @return true если есть события с данной категорией
      */
-    @GetMapping("/by-category/{categoryId}/exists")
+    @GetMapping("/events/by-category/{categoryId}/exists")
     Boolean existsByCategoryId(@PathVariable("categoryId") Long categoryId);
 }

@@ -36,12 +36,12 @@ public class NewEventDto {
     @NotNull(message = "Широта и долгота должны быть заполнены")
     private Location location;
 
-    private boolean paid;
+    private Boolean paid;
 
     @PositiveOrZero
-    private int participantLimit;
+    private Integer participantLimit;
 
-    private boolean requestModeration;
+    private Boolean requestModeration;
 
     @NotBlank(message = "Заголовок события должен быть заполнен")
     @Size(min = 3, max = 120, message = "Заголовок события должен быть от 3 до 120 символов")

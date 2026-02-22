@@ -19,7 +19,6 @@ import ru.practicum.event.service.EventService;
 import ru.practicum.event.util.EventGetAdminParam;
 import ru.practicum.event.util.EventGetPublicParam;
 import ru.practicum.event.util.State;
-import ru.practicum.event.util.StateActionAdmin;
 import ru.practicum.exception.BadRequestException;
 import ru.practicum.exception.ConflictResource;
 import ru.practicum.exception.NotFoundResource;
@@ -182,15 +181,29 @@ public class EventServiceImpl implements EventService {
 
         // Обновляем статусы через RequestClient
         for (Long requestId : eventRequestStatus.getRequestIds()) {
+            ParticipationRequestDto request = requests.stream()
+                    .filter(r -> r.getId().equals(requestId))
+                    .findFirst()
+                    .orElseThrow(() -> new NotFoundResource("Request", requestId));
+
+            // Проверяем, что запрос еще не обработан
+            if (request.getStatus() != Status.PENDING) {
+                throw new ConflictResource(
+                        String.format("Запрос %d уже обработан (текущий статус: %s)",
+                                requestId, request.getStatus())
+                );
+            }
+
             if (eventRequestStatus.getStatus() == Status.CONFIRMED) {
-                if (event.getParticipantLimit() == 0 || confirmedCount < event.getParticipantLimit()) {
-                    ParticipationRequestDto updated = requestClient.updateRequestStatus(requestId, Status.CONFIRMED);
-                    confirmed.add(updated);
-                    confirmedCount++;
-                } else {
-                    ParticipationRequestDto updated = requestClient.updateRequestStatus(requestId, Status.REJECTED);
-                    rejected.add(updated);
+                // Проверяем лимит перед подтверждением
+                if (event.getParticipantLimit() > 0 && confirmedCount >= event.getParticipantLimit()) {
+                    throw new ConflictResource(
+                            String.format("Достигнут лимит участников для события %d", eventId)
+                    );
                 }
+                ParticipationRequestDto updated = requestClient.updateRequestStatus(requestId, Status.CONFIRMED);
+                confirmed.add(updated);
+                confirmedCount++;
             } else {
                 ParticipationRequestDto updated = requestClient.updateRequestStatus(requestId, Status.REJECTED);
                 rejected.add(updated);
@@ -222,18 +235,21 @@ public class EventServiceImpl implements EventService {
     public EventFullDto updateEventByAdmin(long eventId, UpdateEventAdminRequest updateEvent) {
         log.info("Updating event {} by admin with data: {}", eventId, updateEvent);
 
+        // Добавляем проверку даты для админского обновления
+        if (updateEvent.hasEventDate()) {
+            LocalDateTime newEventDate = updateEvent.getEventDate();
+            LocalDateTime now = LocalDateTime.now();
+
+            // Проверка, что дата не в прошлом
+            if (newEventDate.isBefore(now)) {
+                throw new BadRequestException("Дата события не может быть в прошлом");
+            }
+        }
+
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new NotFoundResource("Event", eventId));
 
         checkUpdateEventAdmin(event, updateEvent);
-
-        Long categoryId = null;
-        if (updateEvent.hasCategory()) {
-            CategoryDto categoryDto = categoryClient.getCategoryById(updateEvent.getCategory());
-            categoryId = categoryDto.getId();
-        }
-
-        EventMapper.updateFromAdmin(event, updateEvent, categoryId);
 
         if (updateEvent.hasStateAction()) {
             switch (updateEvent.getStateAction()) {
@@ -246,6 +262,14 @@ public class EventServiceImpl implements EventService {
                     break;
             }
         }
+
+        Long categoryId = null;
+        if (updateEvent.hasCategory()) {
+            CategoryDto categoryDto = categoryClient.getCategoryById(updateEvent.getCategory());
+            categoryId = categoryDto.getId();
+        }
+
+        EventMapper.updateFromAdmin(event, updateEvent, categoryId);
 
         Event updatedEvent = eventRepository.save(event);
         log.info("Updated event by admin with id: {}", updatedEvent.getId());
@@ -341,6 +365,21 @@ public class EventServiceImpl implements EventService {
         return eventRepository.existsByCategoryId(categoryId);
     }
 
+    /**
+     * Получает событие по идентификатору для внутренних вызовов.
+     * В отличие от getEventByPublic, этот метод не проверяет статус PUBLISHED,
+     * что позволяет другим микросервисам получать события на любом этапе жизненного цикла.
+     *
+     * @param eventId идентификатор события
+     * @return полное DTO события
+     */
+    @Override
+    public EventFullDto getEventByIdInternal(long eventId) {
+        log.info("Getting event {} for internal call", eventId);
+        Event event = getEventById(eventId);
+        return enrichEventWithDetails(event);
+    }
+
     // Приватные вспомогательные методы
 
     private Event getEventByIdAndInitiatorId(long eventId, long userId) {
@@ -425,11 +464,16 @@ public class EventServiceImpl implements EventService {
     }
 
     private EventFullDto enrichEventWithDetails(Event event) {
+        log.debug("Enriching event {} with details", event.getId());
+
         // Получаем данные категории
         CategoryDto categoryDto = categoryClient.getCategoryById(event.getCategoryId());
+        log.debug("Category obtained: {}", categoryDto);
 
         // Получаем данные пользователя
         UserDto userDto = userClient.getUserById(event.getInitiatorId());
+        log.debug("User obtained: {}", userDto);
+
         UserShortDto userShortDto = UserShortDto.builder()
                 .id(userDto.getId())
                 .name(userDto.getName())
@@ -437,9 +481,11 @@ public class EventServiceImpl implements EventService {
 
         // Получаем количество подтвержденных запросов
         Long confirmedRequests = requestClient.countConfirmedRequestsByEventId(event.getId());
+        log.debug("Confirmed requests: {}", confirmedRequests);
 
         // Получаем количество просмотров
         Long views = getViewsForEvent(event.getId());
+        log.debug("Views: {}", views);
 
         return EventMapper.toFullDto(event, categoryDto, userShortDto, confirmedRequests, views);
     }
@@ -572,6 +618,14 @@ public class EventServiceImpl implements EventService {
         }
     }
 
+    /**
+     * Проверяет корректность данных при обновлении события администратором.
+     *
+     * @param event       событие из базы данных
+     * @param updateEvent запрос на обновление
+     * @throws ConflictResource    если статус события не позволяет выполнить действие
+     * @throws BadRequestException если дата события не соответствует требованиям
+     */
     private void checkUpdateEventAdmin(Event event, UpdateEventAdminRequest updateEvent) {
         LocalDateTime eventDate;
 
@@ -579,27 +633,38 @@ public class EventServiceImpl implements EventService {
             switch (updateEvent.getStateAction()) {
                 case PUBLISH_EVENT:
                     if (event.getState() != State.PENDING) {
-                        throw new ConflictResource("Событие можно публиковать только в статусе 'Ожидание'");
+                        throw new ConflictResource(
+                                String.format("Событие можно публиковать только в статусе 'Ожидание'. Текущий статус: %s",
+                                        event.getState()));
+                    }
+
+                    // Получаем дату события для проверки
+                    if (updateEvent.hasEventDate()) {
+                        eventDate = updateEvent.getEventDate();
+                    } else {
+                        eventDate = event.getEventDate();
+                    }
+
+                    // Проверяем что дата не null и соответствует требованиям
+                    if (eventDate == null) {
+                        throw new BadRequestException("Дата события не может быть null");
+                    }
+
+                    if (!eventDate.isAfter(LocalDateTime.now().plusHours(1))) {
+                        throw new BadRequestException(
+                                String.format("Дата начала события (%s) должна быть не ранее чем через час от даты публикации (%s)",
+                                        eventDate, LocalDateTime.now().plusHours(1)));
                     }
                     break;
+
                 case REJECT_EVENT:
                     if (event.getState() == State.PUBLISHED) {
-                        throw new ConflictResource("Событие можно отклонить, только если оно еще не опубликовано");
+                        throw new ConflictResource(
+                                String.format("Событие можно отклонить, только если оно еще не опубликовано. Текущий статус: %s",
+                                        event.getState()));
                     }
                     break;
             }
-        }
-
-        if (updateEvent.hasEventDate()) {
-            eventDate = updateEvent.getEventDate();
-        } else {
-            eventDate = event.getEventDate();
-        }
-
-        if (updateEvent.hasStateAction() && updateEvent.getStateAction() == StateActionAdmin.PUBLISH_EVENT &&
-                !eventDate.isAfter(LocalDateTime.now().plusHours(1))) {
-            throw new BadRequestException(
-                    "Дата начала изменяемого события должна быть не ранее чем за час от даты публикации");
         }
     }
 }

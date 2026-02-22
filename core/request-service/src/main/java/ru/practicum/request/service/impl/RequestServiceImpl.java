@@ -113,6 +113,14 @@ public class RequestServiceImpl implements RequestService {
             throw new NotFoundResource("Request", requestId);
         }
 
+        // Можно отменить только заявки в статусе PENDING
+        if (request.getStatus() != Status.PENDING) {
+            throw ConflictResource.ofValue(
+                    "Можно отменить только заявки в статусе PENDING",
+                    "requestId: " + requestId + ", status: " + request.getStatus()
+            );
+        }
+
         request.setStatus(Status.CANCELED);
         Request updatedRequest = requestRepository.save(request);
         log.info("Cancelled request with id: {}", updatedRequest.getId());
