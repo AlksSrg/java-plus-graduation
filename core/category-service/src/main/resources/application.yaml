@@ -14,9 +14,9 @@ spring:
         max-interval: 6000
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/explore_with_me?currentSchema=category_schema
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:root}
+    url: jdbc:postgresql://localhost:8032/main?currentSchema=category_schema
+    username: main
+    password: main
   jpa:
     hibernate:
       ddl-auto: none

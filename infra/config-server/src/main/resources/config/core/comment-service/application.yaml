@@ -5,19 +5,6 @@ spring:
   application:
     name: comment-service
 
-  config:
-    import: "configserver:"
-
-  cloud:
-    config:
-      discovery:
-        enabled: true
-        service-id: config-server
-      fail-fast: true
-      retry:
-        use-random-policy: true
-        max-interval: 6000
-
   datasource:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://localhost:8032/main?currentSchema=comment_schema
@@ -40,19 +27,17 @@ spring:
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
-    enabled: true
-    register-with-eureka: true
+      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka}
     fetch-registry: true
+    register-with-eureka: true
   instance:
-    instance-id: ${spring.application.name}:${random.uuid}
     prefer-ip-address: true
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
 
 logging:
   level:
     ru.practicum: DEBUG
     org.springframework.web: DEBUG
-    org.springframework.cloud: INFO
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql: TRACE
 

@@ -1,10 +1,8 @@
 spring:
   application:
     name: event-service
-
   config:
     import: "configserver:"
-
   cloud:
     config:
       discovery:
@@ -14,7 +12,6 @@ spring:
       retry:
         use-random-policy: true
         max-interval: 6000
-
   datasource:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://localhost:8032/main?currentSchema=event_schema

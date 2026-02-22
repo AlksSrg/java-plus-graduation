@@ -17,15 +17,16 @@ spring:
         max-interval: 6000
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/compilation-db
-    username: compilation-user
-    password: compilation-pass
+    url: jdbc:postgresql://localhost:8032/main?currentSchema=compilation_schema
+    username: main
+    password: main
   jpa:
     hibernate:
       ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: compilation_schema
         format_sql: true
     show-sql: true
   sql:

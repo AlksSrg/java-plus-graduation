@@ -12,6 +12,27 @@ spring:
       retry:
         use-random-policy: true
         max-interval: 6000
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:8032/main?currentSchema=user_schema
+    username: main
+    password: main
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: user_schema
+        format_sql: true
+    show-sql: true
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+server:
+  port: 0
 
 eureka:
   client:
@@ -23,3 +44,7 @@ eureka:
     hostname: localhost
     instance-id: "${spring.application.name}:${random.value}"
     prefer-ip-address: true
+
+logging:
+  level:
+    ru.practicum: DEBUG
