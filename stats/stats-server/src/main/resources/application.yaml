@@ -11,14 +11,17 @@ spring:
         max-interval: 6000
       discovery:
         enabled: true
-        serviceId : config-server
+        serviceId: config-server
 
 eureka:
   client:
-    serviceUrl:
-      defaultZone: http://${eureka.instance.hostname:localhost}:${eureka.instance.port:8761}/eureka/
+    service-url:
+      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka}
+    fetch-registry: true
+    register-with-eureka: true
   instance:
-    preferIpAddress: true
-    hostname: localhost
-    instance-id: "${spring.application.name}:${random.value}"
-    leaseRenewalIntervalInSeconds: 10
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
+
+server:
+  port: 0

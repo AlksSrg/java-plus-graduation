@@ -4,42 +4,185 @@ spring:
       discovery:
         locator:
           enabled: true
-      default-filters:
-        - CircuitBreaker=myCircuitBreaker
-      routes:
-        - id: admin_route
-          uri: lb://main-service
+          lower-case-service-id: true
           predicates:
-            - Path=/admin/**
-        - id: categories_route
-          uri: lb://main-service
+            - name: Path
+              args:
+                pattern: "'/internal/'+serviceId.toLowerCase()+'/**'"
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: serviceId
+            - name: RewritePath
+              args:
+                regexp: "'/internal/' + serviceId.toLowerCase() + '/?(?<remaining>.*)'"
+                replacement: "'/${remaining}'"
+      routes:
+        # Маршруты для user-service (административные)
+        - id: user-service-admin
+          uri: lb://user-service
+          predicates:
+            - Path=/admin/users/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: userServiceBreaker
+                fallbackUri: forward:/fallback/users
+          order: 0
+
+        # Маршруты для category-service
+        - id: category-service-admin
+          uri: lb://category-service
+          predicates:
+            - Path=/admin/categories/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: categoryServiceBreaker
+                fallbackUri: forward:/fallback/categories
+          order: 0
+
+        - id: category-service-public
+          uri: lb://category-service
           predicates:
             - Path=/categories/**
-        - id: users_route
-          uri: lb://main-service
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: categoryServiceBreaker
+                fallbackUri: forward:/fallback/categories
+          order: 1
+
+        # Маршруты для event-service
+        - id: event-service-admin
+          uri: lb://event-service
           predicates:
-            - Path=/users/**
-        - id: events_route
-          uri: lb://main-service
+            - Path=/admin/events/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: eventServiceBreaker
+                fallbackUri: forward:/fallback/events
+          order: 0
+
+        - id: event-service-private
+          uri: lb://event-service
+          predicates:
+            - Path=/users/{userId}/events/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: eventServiceBreaker
+                fallbackUri: forward:/fallback/events
+          order: 1
+
+        - id: event-service-public
+          uri: lb://event-service
           predicates:
             - Path=/events/**
-        - id: compilations_route
-          uri: lb://main-service
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: eventServiceBreaker
+                fallbackUri: forward:/fallback/events
+          order: 2
+
+        # Маршруты для request-service (заявки на участие)
+        - id: request-service-private
+          uri: lb://request-service
+          predicates:
+            - Path=/users/{userId}/requests/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: requestServiceBreaker
+                fallbackUri: forward:/fallback/requests
+          order: 0
+
+        - id: request-service-event-owner
+          uri: lb://request-service
+          predicates:
+            - Path=/users/{userId}/events/{eventId}/requests/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: requestServiceBreaker
+                fallbackUri: forward:/fallback/requests
+          order: 1
+
+        # Маршруты для compilation-service
+        - id: compilation-service-admin
+          uri: lb://compilation-service
+          predicates:
+            - Path=/admin/compilations/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: compilationServiceBreaker
+                fallbackUri: forward:/fallback/compilations
+          order: 0
+
+        - id: compilation-service-public
+          uri: lb://compilation-service
           predicates:
             - Path=/compilations/**
-        - id: stats_hit_route
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: compilationServiceBreaker
+                fallbackUri: forward:/fallback/compilations
+          order: 1
+
+        # Маршруты для comment-service
+        - id: comment-service-private
+          uri: lb://comment-service
+          predicates:
+            - Path=/users/{userId}/comments/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: commentServiceBreaker
+                fallbackUri: forward:/fallback/comments
+          order: 0
+
+        - id: comment-service-public
+          uri: lb://comment-service
+          predicates:
+            - Path=/events/{eventId}/comments
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: commentServiceBreaker
+                fallbackUri: forward:/fallback/comments
+          order: 1
+
+        # Маршруты для stats-server
+        - id: stats-hit-route
           uri: lb://stats-server
           predicates:
             - Path=/hit
-        - id: stats_stat_route
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: statsServerBreaker
+                fallbackUri: forward:/fallback/stats
+          order: 0
+
+        - id: stats-stats-route
           uri: lb://stats-server
           predicates:
-            - Path=/stats**
+            - Path=/stats/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: statsServerBreaker
+                fallbackUri: forward:/fallback/stats
+          order: 1
 
 resilience4j:
   circuitbreaker:
-    instances:
-      myCircuitBreaker:
+    configs:
+      default:
         slidingWindowSize: 10
         failureRateThreshold: 50
         waitDurationInOpenState: 10000
@@ -47,6 +190,43 @@ resilience4j:
         slidingWindowType: COUNT_BASED
         minimumNumberOfCalls: 5
         automaticTransitionFromOpenToHalfOpenEnabled: true
+    instances:
+      userServiceBreaker:
+        baseConfig: default
+      categoryServiceBreaker:
+        baseConfig: default
+      eventServiceBreaker:
+        baseConfig: default
+      requestServiceBreaker:
+        baseConfig: default
+      compilationServiceBreaker:
+        baseConfig: default
+      commentServiceBreaker:
+        baseConfig: default
+      statsServerBreaker:
+        baseConfig: default
 
 server:
   port: 8080
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    org.springframework.web: INFO
+    ru.practicum: DEBUG
+    com.netflix.discovery: INFO
+    org.springframework.cloud.netflix.eureka: INFO
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://host.docker.internal:8761/eureka/
+    registerWithEureka: true
+    fetchRegistry: true
+    registryFetchIntervalSeconds: 5
+    instanceInfoReplicationIntervalSeconds: 5
+  instance:
+    hostname: ${HOSTNAME:localhost}
+    preferIpAddress: true
+    leaseRenewalIntervalInSeconds: 5
+    leaseExpirationDurationInSeconds: 10
