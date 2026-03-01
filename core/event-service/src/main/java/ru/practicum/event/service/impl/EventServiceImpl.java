@@ -1,15 +1,14 @@
 package ru.practicum.event.service.impl;
 
-import dto.ViewStatsDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.practicum.StatsClient;
 import ru.practicum.category.dto.CategoryDto;
 import ru.practicum.event.dto.*;
 import ru.practicum.event.mapper.EventMapper;
@@ -18,7 +17,9 @@ import ru.practicum.event.repository.EventRepository;
 import ru.practicum.event.service.EventService;
 import ru.practicum.event.util.EventGetAdminParam;
 import ru.practicum.event.util.EventGetPublicParam;
+import ru.practicum.event.util.EventSort;
 import ru.practicum.event.util.State;
+import ru.practicum.event.util.StateActionUser;
 import ru.practicum.exception.BadRequestException;
 import ru.practicum.exception.ConflictResource;
 import ru.practicum.exception.NotFoundResource;
@@ -31,9 +32,9 @@ import ru.practicum.user.dto.UserDto;
 import ru.practicum.user.dto.UserShortDto;
 
 import java.time.LocalDateTime;
-import java.util.*;
-
-import static ru.practicum.event.specification.EventSpecification.*;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Реализация сервиса для работы с событиями.
@@ -44,627 +45,617 @@ import static ru.practicum.event.specification.EventSpecification.*;
 @Transactional(readOnly = true)
 public class EventServiceImpl implements EventService {
 
-    private static final String EVENT_URI_PATTERN = "/events/%d";
-    private static final String APP_NAME = "event-service";
-
     private final EventRepository eventRepository;
-    private final CategoryClient categoryClient;
     private final UserClient userClient;
+    private final CategoryClient categoryClient;
     private final RequestClient requestClient;
-    private final StatsClient statsClient;
+    private final EventMapper eventMapper;
 
-    @Override
-    public List<ParticipationRequestDto> getRequests(long userId, long eventId) {
-        log.info("Getting requests for event {} by user {}", eventId, userId);
-
-        // Проверяем существование события и права пользователя
-        Event event = getEventByIdAndInitiatorId(eventId, userId);
-
-        // Получаем запросы через RequestClient
-        return requestClient.getRequestsByEventId(eventId);
-    }
-
-    @Override
-    public EventFullDto get(long userId, long eventId) {
-        log.info("Getting event {} for user {}", eventId, userId);
-
-        Event event = getEventByIdAndInitiatorId(eventId, userId);
-        return enrichEventWithDetails(event);
-    }
-
-    @Override
-    public List<EventShortDto> getAll(long userId, int from, int size) {
-        log.info("Getting all events for user {} with from={}, size={}", userId, from, size);
-
-        Pageable pageable = PageRequest.of(from / size, size);
-        List<Event> events = eventRepository.findByInitiatorId(userId, pageable).getContent();
-
-        return enrichEventsWithDetails(events);
-    }
-
-    @Override
-    @Transactional
-    public EventFullDto create(long userId, NewEventDto eventDto) {
-        log.info("Creating new event for user {}: {}", userId, eventDto);
-
-        // Проверяем дату события
-        if (!eventDto.getEventDate().isAfter(LocalDateTime.now().plusHours(2))) {
-            throw new BadRequestException("Дата должна быть не ранее текущей + 2 часа");
-        }
-
-        // Проверяем существование категории через CategoryClient
-        CategoryDto categoryDto = categoryClient.getCategoryById(eventDto.getCategory());
-
-        // Проверяем существование пользователя через UserClient
-        UserDto userDto = userClient.getUserById(userId);
-        UserShortDto userShortDto = UserShortDto.builder()
-                .id(userDto.getId())
-                .name(userDto.getName())
-                .build();
-
-        // Создаем событие
-        Event event = EventMapper.toEntity(eventDto, categoryDto.getId(), userDto.getId());
-        Event savedEvent = eventRepository.save(event);
-        log.info("Created event with id: {}", savedEvent.getId());
-
-        return EventMapper.toFullDto(savedEvent, categoryDto, userShortDto, 0L, 0L);
-    }
-
-    @Override
-    @Transactional
-    public EventFullDto update(long userId, long eventId, UpdateEventUserRequest updateEvent) {
-        log.info("Updating event {} for user {} with data: {}", eventId, userId, updateEvent);
-
-        Event event = getEventByIdAndInitiatorId(eventId, userId);
-
-        if (event.getState() == State.PUBLISHED) {
-            throw new ConflictResource("Нельзя редактировать опубликованное событие");
-        }
-
-        if (updateEvent.getEventDate() != null &&
-                updateEvent.getEventDate().isBefore(LocalDateTime.now().plusHours(2))) {
-            throw new BadRequestException("Дата события должна быть не ранее чем через 2 часа от текущего момента");
-        }
-
-        Long categoryId = null;
-        if (updateEvent.getCategory() != null) {
-            CategoryDto categoryDto = categoryClient.getCategoryById(updateEvent.getCategory());
-            categoryId = categoryDto.getId();
-        }
-
-        EventMapper.updateFromUser(event, updateEvent, categoryId);
-
-        if (updateEvent.getStateAction() != null) {
-            switch (updateEvent.getStateAction()) {
-                case SEND_TO_REVIEW:
-                    event.setState(State.PENDING);
-                    break;
-                case CANCEL_REVIEW:
-                    event.setState(State.CANCELED);
-                    break;
-            }
-        }
-
-        Event updatedEvent = eventRepository.save(event);
-        log.info("Updated event with id: {}", updatedEvent.getId());
-
-        return enrichEventWithDetails(updatedEvent);
-    }
-
-    @Override
-    @Transactional
-    public EventRequestStatusUpdateResult updateRequestStatus(long userId, long eventId,
-                                                              EventRequestStatusUpdateRequest eventRequestStatus) {
-        log.info("Updating request status for event {} by user {}: {}", eventId, userId, eventRequestStatus);
-
-        Event event = getEventByIdAndInitiatorId(eventId, userId);
-
-        if (!event.getRequestModeration() || event.getParticipantLimit() == 0) {
-            throw new ConflictResource("Подтверждение заявок не требуется для этого события");
-        }
-
-        // Получаем текущие запросы через RequestClient
-        List<ParticipationRequestDto> requests = requestClient.getRequestsByIds(eventRequestStatus.getRequestIds());
-
-        // Проверяем, что все запросы принадлежат этому событию
-        for (ParticipationRequestDto request : requests) {
-            if (request.getEvent() != eventId) {
-                throw new ConflictResource("Запрос " + request.getId() + " не относится к событию " + eventId);
-            }
-        }
-
-        // Получаем количество подтвержденных запросов
-        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
-
-        List<ParticipationRequestDto> confirmed = new ArrayList<>();
-        List<ParticipationRequestDto> rejected = new ArrayList<>();
-
-        // Обновляем статусы через RequestClient
-        for (Long requestId : eventRequestStatus.getRequestIds()) {
-            ParticipationRequestDto request = requests.stream()
-                    .filter(r -> r.getId().equals(requestId))
-                    .findFirst()
-                    .orElseThrow(() -> new NotFoundResource("Request", requestId));
-
-            // Проверяем, что запрос еще не обработан
-            if (request.getStatus() != Status.PENDING) {
-                throw new ConflictResource(
-                        String.format("Запрос %d уже обработан (текущий статус: %s)",
-                                requestId, request.getStatus())
-                );
-            }
-
-            if (eventRequestStatus.getStatus() == Status.CONFIRMED) {
-                // Проверяем лимит перед подтверждением
-                if (event.getParticipantLimit() > 0 && confirmedCount >= event.getParticipantLimit()) {
-                    throw new ConflictResource(
-                            String.format("Достигнут лимит участников для события %d", eventId)
-                    );
-                }
-                ParticipationRequestDto updated = requestClient.updateRequestStatus(requestId, Status.CONFIRMED);
-                confirmed.add(updated);
-                confirmedCount++;
-            } else {
-                ParticipationRequestDto updated = requestClient.updateRequestStatus(requestId, Status.REJECTED);
-                rejected.add(updated);
-            }
-        }
-
-        log.info("Updated request status: confirmed={}, rejected={}", confirmed.size(), rejected.size());
-
-        return EventRequestStatusUpdateResult.builder()
-                .confirmedRequests(confirmed)
-                .rejectedRequests(rejected)
-                .build();
-    }
+    private static final String EVENT_NOT_FOUND_MESSAGE = "Событие с id = %d не найдено";
+    private static final int MAX_TITLE_LENGTH = 120;
+    private static final int MAX_ANNOTATION_LENGTH = 2000;
+    private static final int MAX_DESCRIPTION_LENGTH = 7000;
+    private static final int MIN_HOURS_BEFORE_EVENT = 2;
 
     @Override
     public List<EventFullDto> getEventsByAdmin(EventGetAdminParam param) {
-        log.info("Getting events by admin with params: {}", param);
+        log.info("Поиск событий по параметрам администратора: {}", param);
+
+        Specification<Event> specification = Specification.where(null);
+
+        if (param.getUsers() != null && !param.getUsers().isEmpty()) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    root.get("initiatorId").in(param.getUsers()));
+        }
+
+        if (param.getStates() != null && !param.getStates().isEmpty()) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    root.get("state").in(param.getStates()));
+        }
+
+        if (param.getCategories() != null && !param.getCategories().isEmpty()) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    root.get("categoryId").in(param.getCategories()));
+        }
+
+        if (param.getRangeStart() != null) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.greaterThanOrEqualTo(root.get("eventDate"), param.getRangeStart()));
+        }
+
+        if (param.getRangeEnd() != null) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.lessThanOrEqualTo(root.get("eventDate"), param.getRangeEnd()));
+        }
 
         Pageable pageable = PageRequest.of(param.getFrom() / param.getSize(), param.getSize());
-        Specification<Event> specification = buildAdminSpecification(param);
 
-        List<Event> events = eventRepository.findAll(specification, pageable).getContent();
+        Page<Event> eventPage = eventRepository.findAll(specification, pageable);
+        List<Event> events = eventPage.getContent();
+        log.info("Найдено {} событий", events.size());
 
-        return enrichEventsToFullDto(events);
+        // Получаем количество подтвержденных запросов для всех событий
+        List<Long> eventIds = events.stream().map(Event::getId).collect(Collectors.toList());
+        Map<Long, Long> confirmedCounts = requestClient.countConfirmedRequestsByEventIds(eventIds);
+
+        return events.stream()
+                .map(event -> {
+                    CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+                    UserShortDto user = getUserShortDto(event.getInitiatorId());
+                    // Обновляем confirmedRequests из ответа request-service
+                    event.setConfirmedRequests(confirmedCounts.getOrDefault(event.getId(), 0L));
+                    return eventMapper.toFullDto(event, category, user);
+                })
+                .collect(Collectors.toList());
     }
 
     @Override
     @Transactional
-    public EventFullDto updateEventByAdmin(long eventId, UpdateEventAdminRequest updateEvent) {
-        log.info("Updating event {} by admin with data: {}", eventId, updateEvent);
+    public EventFullDto updateEventByAdmin(Long eventId, UpdateEventAdminRequest updateRequest) {
+        log.info("Обновление события с id = {} администратором: {}", eventId, updateRequest);
 
-        // Добавляем проверку даты для админского обновления
-        if (updateEvent.hasEventDate()) {
-            LocalDateTime newEventDate = updateEvent.getEventDate();
-            LocalDateTime now = LocalDateTime.now();
+        Event event = findEventById(eventId);
 
-            // Проверка, что дата не в прошлом
-            if (newEventDate.isBefore(now)) {
-                throw new BadRequestException("Дата события не может быть в прошлом");
-            }
+        if (updateRequest.getAnnotation() != null) {
+            validateAnnotation(updateRequest.getAnnotation());
+            event.setAnnotation(updateRequest.getAnnotation());
         }
 
-        Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new NotFoundResource("Event", eventId));
+        if (updateRequest.getCategory() != null) {
+            CategoryDto category = categoryClient.getCategoryById(updateRequest.getCategory());
+            event.setCategoryId(category.getId());
+        }
 
-        checkUpdateEventAdmin(event, updateEvent);
+        if (updateRequest.getDescription() != null) {
+            validateDescription(updateRequest.getDescription());
+            event.setDescription(updateRequest.getDescription());
+        }
 
-        if (updateEvent.hasStateAction()) {
-            switch (updateEvent.getStateAction()) {
+        if (updateRequest.getEventDate() != null) {
+            validateEventDate(updateRequest.getEventDate());
+            event.setEventDate(updateRequest.getEventDate());
+        }
+
+        if (updateRequest.getLocation() != null) {
+            event.setLocation(updateRequest.getLocation());
+        }
+
+        if (updateRequest.getPaid() != null) {
+            event.setPaid(updateRequest.getPaid());
+        }
+
+        if (updateRequest.getParticipantLimit() != null) {
+            event.setParticipantLimit(updateRequest.getParticipantLimit());
+        }
+
+        if (updateRequest.getRequestModeration() != null) {
+            event.setRequestModeration(updateRequest.getRequestModeration());
+        }
+
+        if (updateRequest.getTitle() != null) {
+            validateTitle(updateRequest.getTitle());
+            event.setTitle(updateRequest.getTitle());
+        }
+
+        if (updateRequest.getStateAction() != null) {
+            switch (updateRequest.getStateAction()) {
                 case PUBLISH_EVENT:
-                    event.setState(State.PUBLISHED);
-                    event.setPublishedOn(LocalDateTime.now());
+                    publishEvent(event);
                     break;
                 case REJECT_EVENT:
-                    event.setState(State.CANCELED);
+                    rejectEvent(event);
                     break;
+                default:
+                    throw new BadRequestException("Некорректное действие: " + updateRequest.getStateAction());
             }
         }
 
-        Long categoryId = null;
-        if (updateEvent.hasCategory()) {
-            CategoryDto categoryDto = categoryClient.getCategoryById(updateEvent.getCategory());
-            categoryId = categoryDto.getId();
-        }
-
-        EventMapper.updateFromAdmin(event, updateEvent, categoryId);
-
         Event updatedEvent = eventRepository.save(event);
-        log.info("Updated event by admin with id: {}", updatedEvent.getId());
+        log.info("Событие с id = {} успешно обновлено", eventId);
 
-        return enrichEventWithDetails(updatedEvent);
+        CategoryDto category = categoryClient.getCategoryById(updatedEvent.getCategoryId());
+        UserShortDto user = getUserShortDto(updatedEvent.getInitiatorId());
+        // Получаем актуальное количество подтвержденных запросов
+        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
+        updatedEvent.setConfirmedRequests(confirmedCount);
+
+        return eventMapper.toFullDto(updatedEvent, category, user);
     }
 
     @Override
     public List<EventShortDto> getEventsByPublic(EventGetPublicParam param) {
-        log.info("Getting events by public with params: {}", param);
+        log.info("Поиск событий по публичным параметрам: {}", param);
 
-        if (param.getRangeStart() != null && param.getRangeEnd() != null
-                && param.getRangeEnd().isBefore(param.getRangeStart())) {
-            throw new BadRequestException("Некорректный интервал дат");
+        if (param.getRangeStart() != null && param.getRangeEnd() != null) {
+            if (param.getRangeEnd().isBefore(param.getRangeStart())) {
+                throw new BadRequestException("Дата окончания не может быть раньше даты начала");
+            }
         }
 
-        Specification<Event> specification = buildPublicSpecification(param);
-        Pageable pageable = buildPageable(param);
+        Specification<Event> specification = Specification.where((root, query, criteriaBuilder) ->
+                criteriaBuilder.equal(root.get("state"), State.PUBLISHED));
 
-        List<Event> events = eventRepository.findAll(specification, pageable).getContent();
+        if (param.getText() != null && !param.getText().isBlank()) {
+            String searchText = "%" + param.getText().toLowerCase() + "%";
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.or(
+                            criteriaBuilder.like(criteriaBuilder.lower(root.get("annotation")), searchText),
+                            criteriaBuilder.like(criteriaBuilder.lower(root.get("description")), searchText)
+                    ));
+        }
 
-        List<EventShortDto> result = enrichEventsWithDetails(events);
+        if (param.getCategories() != null && !param.getCategories().isEmpty()) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    root.get("categoryId").in(param.getCategories()));
+        }
 
-        // Сохраняем статистику просмотров (асинхронно в контроллере)
+        if (param.getPaid() != null) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.equal(root.get("paid"), param.getPaid()));
+        }
+
+        if (param.getRangeStart() != null) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.greaterThanOrEqualTo(root.get("eventDate"), param.getRangeStart()));
+        } else {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.greaterThanOrEqualTo(root.get("eventDate"), LocalDateTime.now()));
+        }
+
+        if (param.getRangeEnd() != null) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.lessThanOrEqualTo(root.get("eventDate"), param.getRangeEnd()));
+        }
+
+        if (param.getOnlyAvailable() != null && param.getOnlyAvailable()) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.or(
+                            criteriaBuilder.equal(root.get("participantLimit"), 0),
+                            criteriaBuilder.lessThan(
+                                    root.get("confirmedRequests"),
+                                    root.get("participantLimit")
+                            )
+                    ));
+        }
+
+        Sort sort = Sort.unsorted();
+        if (param.getSort() != null) {
+            // В EventSort нет RATING, пока оставляем сортировку только по EVENT_DATE
+            if (param.getSort().equals(EventSort.EVENT_DATE.toString())) {
+                sort = Sort.by(Sort.Direction.ASC, "eventDate");
+            } else {
+                log.warn("Неизвестный тип сортировки: {}", param.getSort());
+            }
+        }
+
+        Pageable pageable = PageRequest.of(param.getFrom() / param.getSize(), param.getSize(), sort);
+        Page<Event> eventPage = eventRepository.findAll(specification, pageable);
+        List<Event> events = eventPage.getContent();
+        log.info("Найдено {} опубликованных событий", events.size());
+
+        // Получаем количество подтвержденных запросов для всех событий
+        List<Long> eventIds = events.stream().map(Event::getId).collect(Collectors.toList());
+        Map<Long, Long> confirmedCounts = requestClient.countConfirmedRequestsByEventIds(eventIds);
+
+        return events.stream()
+                .map(event -> {
+                    CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+                    UserShortDto user = getUserShortDto(event.getInitiatorId());
+                    // Обновляем confirmedRequests из ответа request-service
+                    event.setConfirmedRequests(confirmedCounts.getOrDefault(event.getId(), 0L));
+                    return eventMapper.toShortDto(event, category, user);
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public EventFullDto getEventByPublic(Long id) {
+        log.info("Получение события с id = {} для публичного доступа", id);
+
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new NotFoundResource(String.format(EVENT_NOT_FOUND_MESSAGE, id)));
+
+        if (event.getState() != State.PUBLISHED) {
+            throw new NotFoundResource(String.format(EVENT_NOT_FOUND_MESSAGE, id));
+        }
+
+        log.info("Событие с id = {} найдено", id);
+
+        // Получаем актуальное количество подтвержденных запросов
+        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(id);
+        event.setConfirmedRequests(confirmedCount);
+
+        CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+        UserShortDto user = getUserShortDto(event.getInitiatorId());
+        return eventMapper.toFullDto(event, category, user);
+    }
+
+    @Override
+    public List<EventShortDto> getEventsByUser(Long userId, int from, int size) {
+        log.info("Получение событий пользователя с id = {}", userId);
+
+        userClient.getUserById(userId);
+
+        Pageable pageable = PageRequest.of(from / size, size);
+        Page<Event> eventPage = eventRepository.findByInitiatorId(userId, pageable);
+        List<Event> events = eventPage.getContent();
+
+        log.info("Найдено {} событий пользователя с id = {}", events.size(), userId);
+
+        // Получаем количество подтвержденных запросов для всех событий
+        List<Long> eventIds = events.stream().map(Event::getId).collect(Collectors.toList());
+        Map<Long, Long> confirmedCounts = requestClient.countConfirmedRequestsByEventIds(eventIds);
+
+        return events.stream()
+                .map(event -> {
+                    CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+                    UserShortDto user = getUserShortDto(event.getInitiatorId());
+                    // Обновляем confirmedRequests из ответа request-service
+                    event.setConfirmedRequests(confirmedCounts.getOrDefault(event.getId(), 0L));
+                    return eventMapper.toShortDto(event, category, user);
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public EventFullDto createEvent(Long userId, NewEventDto newEventDto) {
+        log.info("Создание нового события пользователем с id = {}: {}", userId, newEventDto);
+
+        validateEventDate(newEventDto.getEventDate());
+        validateTitle(newEventDto.getTitle());
+        validateAnnotation(newEventDto.getAnnotation());
+        validateDescription(newEventDto.getDescription());
+
+        UserDto user = userClient.getUserById(userId);
+        CategoryDto category = categoryClient.getCategoryById(newEventDto.getCategory());
+
+        Event event = eventMapper.toEntity(newEventDto);
+        event.setInitiatorId(user.getId());
+        event.setCategoryId(category.getId());
+
+        Event savedEvent = eventRepository.save(event);
+        log.info("Событие с id = {} успешно создано", savedEvent.getId());
+
+        UserShortDto userShort = getUserShortDto(user.getId());
+        return eventMapper.toFullDto(savedEvent, category, userShort);
+    }
+
+    @Override
+    public EventFullDto getEventByUser(Long userId, Long eventId) {
+        log.info("Получение события с id = {} пользователя с id = {}", eventId, userId);
+
+        userClient.getUserById(userId);
+
+        Event event = eventRepository.findByIdAndInitiatorId(eventId, userId)
+                .orElseThrow(() -> new NotFoundResource(
+                        String.format("Событие с id = %d у пользователя с id = %d не найдено", eventId, userId)));
+
+        // Получаем актуальное количество подтвержденных запросов
+        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
+        event.setConfirmedRequests(confirmedCount);
+
+        CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+        UserShortDto user = getUserShortDto(event.getInitiatorId());
+        return eventMapper.toFullDto(event, category, user);
+    }
+
+    @Override
+    @Transactional
+    public EventFullDto updateEventByUser(Long userId, Long eventId, UpdateEventUserRequest updateRequest) {
+        log.info("Обновление события с id = {} пользователем с id = {}: {}", eventId, userId, updateRequest);
+
+        userClient.getUserById(userId);
+
+        Event event = eventRepository.findByIdAndInitiatorId(eventId, userId)
+                .orElseThrow(() -> new NotFoundResource(
+                        String.format("Событие с id = %d у пользователя с id = %d не найдено", eventId, userId)));
+
+        if (event.getState() == State.PUBLISHED) {
+            throw new ConflictResource("Нельзя изменить опубликованное событие");
+        }
+
+        if (updateRequest.getAnnotation() != null) {
+            validateAnnotation(updateRequest.getAnnotation());
+            event.setAnnotation(updateRequest.getAnnotation());
+        }
+
+        if (updateRequest.getCategory() != null) {
+            CategoryDto category = categoryClient.getCategoryById(updateRequest.getCategory());
+            event.setCategoryId(category.getId());
+        }
+
+        if (updateRequest.getDescription() != null) {
+            validateDescription(updateRequest.getDescription());
+            event.setDescription(updateRequest.getDescription());
+        }
+
+        if (updateRequest.getEventDate() != null) {
+            validateEventDate(updateRequest.getEventDate());
+            event.setEventDate(updateRequest.getEventDate());
+        }
+
+        if (updateRequest.getLocation() != null) {
+            event.setLocation(updateRequest.getLocation());
+        }
+
+        if (updateRequest.getPaid() != null) {
+            event.setPaid(updateRequest.getPaid());
+        }
+
+        if (updateRequest.getParticipantLimit() != null) {
+            event.setParticipantLimit(updateRequest.getParticipantLimit());
+        }
+
+        if (updateRequest.getRequestModeration() != null) {
+            event.setRequestModeration(updateRequest.getRequestModeration());
+        }
+
+        if (updateRequest.getTitle() != null) {
+            validateTitle(updateRequest.getTitle());
+            event.setTitle(updateRequest.getTitle());
+        }
+
+        if (updateRequest.getStateAction() != null) {
+            if (updateRequest.getStateAction() == StateActionUser.CANCEL_REVIEW) {
+                event.setState(State.CANCELED);
+            } else if (updateRequest.getStateAction() == StateActionUser.SEND_TO_REVIEW) {
+                event.setState(State.PENDING);
+            }
+        }
+
+        Event updatedEvent = eventRepository.save(event);
+        log.info("Событие с id = {} успешно обновлено пользователем", eventId);
+
+        // Получаем актуальное количество подтвержденных запросов
+        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
+        updatedEvent.setConfirmedRequests(confirmedCount);
+
+        CategoryDto category = categoryClient.getCategoryById(updatedEvent.getCategoryId());
+        UserShortDto user = getUserShortDto(updatedEvent.getInitiatorId());
+        return eventMapper.toFullDto(updatedEvent, category, user);
+    }
+
+    @Override
+    public EventFullDto getEventByIdInternal(Long eventId) {
+        log.info("Internal call: получение события с id = {}", eventId);
+        Event event = findEventById(eventId);
+
+        // Получаем актуальное количество подтвержденных запросов
+        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
+        event.setConfirmedRequests(confirmedCount);
+
+        CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+        UserShortDto user = getUserShortDto(event.getInitiatorId());
+        return eventMapper.toFullDto(event, category, user);
+    }
+
+    @Override
+    public List<ParticipationRequestDto> getRequests(Long userId, Long eventId) {
+        log.info("Получение запросов для события {} пользователя {}", eventId, userId);
+        // Проверяем, что событие принадлежит пользователю
+        eventRepository.findByIdAndInitiatorId(eventId, userId)
+                .orElseThrow(() -> new NotFoundResource(
+                        String.format("Событие с id = %d у пользователя с id = %d не найдено", eventId, userId)));
+
+        return requestClient.getRequestsByEventId(eventId);
+    }
+
+    @Override
+    @Transactional
+    public EventRequestStatusUpdateResult updateRequestStatus(Long userId, Long eventId,
+                                                              EventRequestStatusUpdateRequest request) {
+        log.info("Обновление статусов запросов для события {} пользователя {}", eventId, userId);
+        // Проверяем, что событие принадлежит пользователю
+        Event event = eventRepository.findByIdAndInitiatorId(eventId, userId)
+                .orElseThrow(() -> new NotFoundResource(
+                        String.format("Событие с id = %d у пользователя с id = %d не найдено", eventId, userId)));
+
+        EventRequestStatusUpdateResult result = new EventRequestStatusUpdateResult();
+
+        // Обрабатываем каждый запрос индивидуально
+        for (Long requestId : request.getRequestIds()) {
+            ParticipationRequestDto updatedRequest = requestClient.updateRequestStatus(requestId, request.getStatus());
+
+            if (request.getStatus() == Status.CONFIRMED) {
+                // Обновляем количество подтвержденных запросов
+                Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
+                event.setConfirmedRequests(confirmedCount);
+                eventRepository.save(event);
+
+                result.getConfirmedRequests().add(updatedRequest);
+            } else {
+                result.getRejectedRequests().add(updatedRequest);
+            }
+        }
 
         return result;
     }
 
     @Override
-    public EventFullDto getEventByPublic(long eventId) {
-        log.info("Getting event {} by public", eventId);
+    public List<EventShortDto> getEventsByIds(List<Long> ids) {
+        log.info("Получение событий по идентификаторам: {}", ids);
 
-        Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new NotFoundResource("Event", eventId));
-
-        if (event.getState() != State.PUBLISHED) {
-            throw new NotFoundResource("Event", eventId);
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
         }
 
-        return enrichEventWithDetails(event);
-    }
+        List<Event> events = eventRepository.findAllById(ids);
+        log.info("Найдено {} событий", events.size());
 
-    @Override
-    public Event getEventById(long eventId) {
-        return eventRepository.findById(eventId)
-                .orElseThrow(() -> new NotFoundResource("Event", eventId));
-    }
+        // Получаем количество подтвержденных запросов для всех событий
+        Map<Long, Long> confirmedCounts = requestClient.countConfirmedRequestsByEventIds(ids);
 
-    // Новые методы для Feign-клиентов
+        return events.stream()
+                .map(event -> {
+                    CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+                    UserShortDto user = getUserShortDto(event.getInitiatorId());
+                    // Обновляем confirmedRequests из ответа request-service
+                    event.setConfirmedRequests(confirmedCounts.getOrDefault(event.getId(), 0L));
+                    return eventMapper.toShortDto(event, category, user);
+                })
+                .collect(Collectors.toList());
+    }
 
     @Override
     public EventShortDto getEventShortById(Long eventId) {
-        log.info("Getting short event by id: {}", eventId);
+        log.info("Получение краткой информации о событии с id = {}", eventId);
 
-        Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new NotFoundResource("Event", eventId));
+        Event event = findEventById(eventId);
 
-        CategoryDto categoryDto = categoryClient.getCategoryById(event.getCategoryId());
-        UserDto userDto = userClient.getUserById(event.getInitiatorId());
+        // Получаем актуальное количество подтвержденных запросов
+        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
+        event.setConfirmedRequests(confirmedCount);
 
-        UserShortDto userShortDto = UserShortDto.builder()
-                .id(userDto.getId())
-                .name(userDto.getName())
-                .build();
-
-        Long confirmedRequests = requestClient.countConfirmedRequestsByEventId(eventId);
-        Long views = getViewsForEvent(eventId);
-
-        return EventMapper.toShortDto(event, categoryDto, userShortDto, confirmedRequests, views);
-    }
-
-    @Override
-    public List<EventShortDto> getEventsByIds(List<Long> ids) {
-        log.info("Getting events by ids: {}", ids);
-
-        if (ids == null || ids.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<Event> events = eventRepository.findByIdIn(ids);
-        return enrichEventsWithDetails(events);
+        CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+        UserShortDto user = getUserShortDto(event.getInitiatorId());
+        return eventMapper.toShortDto(event, category, user);
     }
 
     @Override
     public Boolean existsEventById(Long eventId) {
-        log.info("Checking if event exists by id: {}", eventId);
+        log.info("Проверка существования события с id = {}", eventId);
         return eventRepository.existsById(eventId);
     }
 
     @Override
     public Boolean existsByCategoryId(Long categoryId) {
-        log.info("Checking if events exist by category id: {}", categoryId);
+        log.info("Проверка существования событий с категорией id = {}", categoryId);
         return eventRepository.existsByCategoryId(categoryId);
     }
 
-    /**
-     * Получает событие по идентификатору для внутренних вызовов.
-     * В отличие от getEventByPublic, этот метод не проверяет статус PUBLISHED,
-     * что позволяет другим микросервисам получать события на любом этапе жизненного цикла.
-     *
-     * @param eventId идентификатор события
-     * @return полное DTO события
-     */
     @Override
-    public EventFullDto getEventByIdInternal(long eventId) {
-        log.info("Getting event {} for internal call", eventId);
-        Event event = getEventById(eventId);
-        return enrichEventWithDetails(event);
+    public Event findEventById(Long eventId) {
+        log.info("Поиск события по id = {}", eventId);
+        return eventRepository.findById(eventId)
+                .orElseThrow(() -> new NotFoundResource(String.format(EVENT_NOT_FOUND_MESSAGE, eventId)));
     }
 
-    // Приватные вспомогательные методы
+    @Override
+    public boolean hasUserParticipated(Long userId, Long eventId) {
+        log.info("Проверка участия пользователя {} в событии {}", userId, eventId);
 
-    private Event getEventByIdAndInitiatorId(long eventId, long userId) {
-        return eventRepository.findByIdAndInitiatorId(eventId, userId)
-                .orElseThrow(() -> new NotFoundResource("Event", eventId));
-    }
-
-    private Specification<Event> buildAdminSpecification(EventGetAdminParam param) {
-        Specification<Event> specification = Specification.where(null);
-
-        if (param.getUsers() != null && !param.getUsers().isEmpty()) {
-            specification = specification.and(byUsers(param.getUsers()));
-        }
-
-        if (param.getStates() != null && !param.getStates().isEmpty()) {
-            specification = specification.and(byStates(param.getStates()));
-        }
-
-        if (param.getCategories() != null && !param.getCategories().isEmpty()) {
-            specification = specification.and(byCategories(param.getCategories()));
-        }
-
-        if (param.getRangeStart() != null) {
-            specification = specification.and(byRangeStart(param.getRangeStart()));
-        }
-
-        if (param.getRangeEnd() != null) {
-            specification = specification.and(byRangeEnd(param.getRangeEnd()));
-        }
-
-        return specification;
-    }
-
-    private Specification<Event> buildPublicSpecification(EventGetPublicParam param) {
-        Specification<Event> specification = Specification.where(publishedOnly());
-
-        if (param.getText() != null && !param.getText().isBlank()) {
-            specification = specification.and(byText(param.getText()));
-        }
-
-        if (param.getCategories() != null && !param.getCategories().isEmpty()) {
-            specification = specification.and(byCategories(param.getCategories()));
-        }
-
-        if (param.getPaid() != null) {
-            specification = specification.and(byPaid(param.getPaid()));
-        }
-
-        LocalDateTime rangeStart = param.getRangeStart();
-        LocalDateTime rangeEnd = param.getRangeEnd();
-
-        if (rangeStart != null) {
-            specification = specification.and(byRangeStart(rangeStart));
-        }
-
-        if (rangeEnd != null) {
-            specification = specification.and(byRangeEnd(rangeEnd));
-        }
-
-        if (rangeStart == null && rangeEnd == null) {
-            specification = specification.and(byRangeStart(LocalDateTime.now()));
-        }
-
-        if (param.getOnlyAvailable() != null && param.getOnlyAvailable()) {
-            specification = specification.and(onlyAvailable());
-        }
-
-        return specification;
-    }
-
-    private Pageable buildPageable(EventGetPublicParam param) {
-        Sort sort = Sort.unsorted();
-
-        if (param.getSort() != null) {
-            if (param.getSort().equals("EVENT_DATE")) {
-                sort = Sort.by("eventDate");
-            }
-            // VIEWS сортировка будет применена после получения данных
-        }
-
-        return PageRequest.of(param.getFrom() / param.getSize(), param.getSize(), sort);
-    }
-
-    private EventFullDto enrichEventWithDetails(Event event) {
-        log.debug("Enriching event {} with details", event.getId());
-
-        // Получаем данные категории
-        CategoryDto categoryDto = categoryClient.getCategoryById(event.getCategoryId());
-        log.debug("Category obtained: {}", categoryDto);
-
-        // Получаем данные пользователя
-        UserDto userDto = userClient.getUserById(event.getInitiatorId());
-        log.debug("User obtained: {}", userDto);
-
-        UserShortDto userShortDto = UserShortDto.builder()
-                .id(userDto.getId())
-                .name(userDto.getName())
-                .build();
-
-        // Получаем количество подтвержденных запросов
-        Long confirmedRequests = requestClient.countConfirmedRequestsByEventId(event.getId());
-        log.debug("Confirmed requests: {}", confirmedRequests);
-
-        // Получаем количество просмотров
-        Long views = getViewsForEvent(event.getId());
-        log.debug("Views: {}", views);
-
-        return EventMapper.toFullDto(event, categoryDto, userShortDto, confirmedRequests, views);
-    }
-
-    /**
-     * Обогащает список событий дополнительными данными
-     */
-    private List<EventShortDto> enrichEventsWithDetails(List<Event> events) {
-        if (events.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<EventShortDto> result = new ArrayList<>();
-
-        for (Event event : events) {
-            try {
-                // Получаем данные категории по одному ID
-                CategoryDto categoryDto = categoryClient.getCategoryById(event.getCategoryId());
-
-                // Получаем данные пользователя по одному ID
-                UserDto userDto = userClient.getUserById(event.getInitiatorId());
-
-                if (categoryDto == null || userDto == null) {
-                    log.warn("Skipping event {} due to missing category or user data", event.getId());
-                    continue;
-                }
-
-                UserShortDto userShortDto = UserShortDto.builder()
-                        .id(userDto.getId())
-                        .name(userDto.getName())
-                        .build();
-
-                // Получаем количество подтвержденных запросов
-                Long confirmed = requestClient.countConfirmedRequestsByEventId(event.getId());
-
-                // Получаем просмотры
-                Long views = getViewsForEvent(event.getId());
-
-                result.add(EventMapper.toShortDto(event, categoryDto, userShortDto, confirmed, views));
-            } catch (Exception e) {
-                log.error("Error enriching event {}: {}", event.getId(), e.getMessage());
-                // Продолжаем со следующим событием
-            }
-        }
-
-        return result;
-    }
-
-    /**
-     * Обогащает список событий до FullDto
-     */
-    private List<EventFullDto> enrichEventsToFullDto(List<Event> events) {
-        if (events.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<EventFullDto> result = new ArrayList<>();
-
-        for (Event event : events) {
-            try {
-                // Получаем данные категории по одному ID
-                CategoryDto categoryDto = categoryClient.getCategoryById(event.getCategoryId());
-
-                // Получаем данные пользователя по одному ID
-                UserDto userDto = userClient.getUserById(event.getInitiatorId());
-
-                if (categoryDto == null || userDto == null) {
-                    log.warn("Skipping event {} due to missing category or user data", event.getId());
-                    continue;
-                }
-
-                UserShortDto userShortDto = UserShortDto.builder()
-                        .id(userDto.getId())
-                        .name(userDto.getName())
-                        .build();
-
-                // Получаем количество подтвержденных запросов
-                Long confirmed = requestClient.countConfirmedRequestsByEventId(event.getId());
-
-                // Получаем просмотры
-                Long views = getViewsForEvent(event.getId());
-
-                result.add(EventMapper.toFullDto(event, categoryDto, userShortDto, confirmed, views));
-            } catch (Exception e) {
-                log.error("Error enriching event {}: {}", event.getId(), e.getMessage());
-                // Продолжаем со следующим событием
-            }
-        }
-
-        return result;
-    }
-
-    private Long getViewsForEvent(Long eventId) {
         try {
-            LocalDateTime start = LocalDateTime.now().minusYears(5);
-            LocalDateTime end = LocalDateTime.now();
+            List<ParticipationRequestDto> requests = requestClient.getRequestsByEventId(eventId);
+            boolean participated = requests.stream()
+                    .anyMatch(request -> request.getRequester().equals(userId) &&
+                            request.getStatus() == Status.CONFIRMED);
 
-            List<ViewStatsDto> stats = statsClient.getStats(
-                    start, end,
-                    List.of(String.format(EVENT_URI_PATTERN, eventId)),
-                    true
-            );
-
-            return stats.isEmpty() ? 0L : stats.getFirst().getHits();
+            log.info("Пользователь {} {} в событии {}",
+                    userId, participated ? "участвовал" : "не участвовал", eventId);
+            return participated;
         } catch (Exception e) {
-            log.warn("Failed to get views for event {}: {}", eventId, e.getMessage());
-            return 0L;
-        }
-    }
-
-    private Map<Long, Long> getViewsForEvents(List<Event> events) {
-        if (events.isEmpty()) {
-            return Collections.emptyMap();
-        }
-
-        Map<Long, Long> viewsMap = new HashMap<>();
-        for (Event event : events) {
-            viewsMap.put(event.getId(), getViewsForEvent(event.getId()));
-        }
-        return viewsMap;
-    }
-
-    private Long extractEventIdFromUri(String uri) {
-        try {
-            String[] parts = uri.split("/");
-            return Long.parseLong(parts[parts.length - 1]);
-        } catch (Exception e) {
-            log.warn("Failed to extract event id from uri: {}", uri);
-            return 0L;
+            log.error("Ошибка при проверке участия пользователя {} в событии {}", userId, eventId, e);
+            return false;
         }
     }
 
     /**
-     * Проверяет корректность данных при обновлении события администратором.
+     * Получает краткую информацию о пользователе.
      *
-     * @param event       событие из базы данных
-     * @param updateEvent запрос на обновление
-     * @throws ConflictResource    если статус события не позволяет выполнить действие
-     * @throws BadRequestException если дата события не соответствует требованиям
+     * @param userId идентификатор пользователя
+     * @return краткое DTO пользователя
      */
-    private void checkUpdateEventAdmin(Event event, UpdateEventAdminRequest updateEvent) {
-        LocalDateTime eventDate;
+    private UserShortDto getUserShortDto(Long userId) {
+        try {
+            return userClient.getUserShortById(userId);
+        } catch (Exception e) {
+            log.warn("Не удалось получить краткую информацию о пользователе {}", userId);
+            return null;
+        }
+    }
 
-        if (updateEvent.hasStateAction()) {
-            switch (updateEvent.getStateAction()) {
-                case PUBLISH_EVENT:
-                    if (event.getState() != State.PENDING) {
-                        throw new ConflictResource(
-                                String.format("Событие можно публиковать только в статусе 'Ожидание'. Текущий статус: %s",
-                                        event.getState()));
-                    }
+    /**
+     * Публикует событие.
+     *
+     * @param event событие для публикации
+     */
+    private void publishEvent(Event event) {
+        if (event.getState() != State.PENDING) {
+            throw new ConflictResource("Событие можно опубликовать только в статусе PENDING");
+        }
+        event.setState(State.PUBLISHED);
+        event.setPublishedOn(LocalDateTime.now());
+    }
 
-                    // Получаем дату события для проверки
-                    if (updateEvent.hasEventDate()) {
-                        eventDate = updateEvent.getEventDate();
-                    } else {
-                        eventDate = event.getEventDate();
-                    }
+    /**
+     * Отклоняет событие.
+     *
+     * @param event событие для отклонения
+     */
+    private void rejectEvent(Event event) {
+        if (event.getState() == State.PUBLISHED) {
+            throw new ConflictResource("Нельзя отклонить опубликованное событие");
+        }
+        event.setState(State.CANCELED);
+    }
 
-                    // Проверяем что дата не null и соответствует требованиям
-                    if (eventDate == null) {
-                        throw new BadRequestException("Дата события не может быть null");
-                    }
+    /**
+     * Проверяет дату события.
+     *
+     * @param eventDate дата события
+     */
+    private void validateEventDate(LocalDateTime eventDate) {
+        if (eventDate.isBefore(LocalDateTime.now().plusHours(MIN_HOURS_BEFORE_EVENT))) {
+            throw new BadRequestException(
+                    String.format("Дата события должна быть не раньше чем через %d часа от текущего времени",
+                            MIN_HOURS_BEFORE_EVENT));
+        }
+    }
 
-                    if (!eventDate.isAfter(LocalDateTime.now().plusHours(1))) {
-                        throw new BadRequestException(
-                                String.format("Дата начала события (%s) должна быть не ранее чем через час от даты публикации (%s)",
-                                        eventDate, LocalDateTime.now().plusHours(1)));
-                    }
-                    break;
+    /**
+     * Проверяет заголовок события.
+     *
+     * @param title заголовок события
+     */
+    private void validateTitle(String title) {
+        if (title.length() > MAX_TITLE_LENGTH) {
+            throw new BadRequestException(
+                    String.format("Максимальная длина заголовка - %d символов", MAX_TITLE_LENGTH));
+        }
+    }
 
-                case REJECT_EVENT:
-                    if (event.getState() == State.PUBLISHED) {
-                        throw new ConflictResource(
-                                String.format("Событие можно отклонить, только если оно еще не опубликовано. Текущий статус: %s",
-                                        event.getState()));
-                    }
-                    break;
-            }
+    /**
+     * Проверяет аннотацию события.
+     *
+     * @param annotation аннотация события
+     */
+    private void validateAnnotation(String annotation) {
+        if (annotation.length() > MAX_ANNOTATION_LENGTH) {
+            throw new BadRequestException(
+                    String.format("Максимальная длина аннотации - %d символов", MAX_ANNOTATION_LENGTH));
+        }
+    }
+
+    /**
+     * Проверяет описание события.
+     *
+     * @param description описание события
+     */
+    private void validateDescription(String description) {
+        if (description.length() > MAX_DESCRIPTION_LENGTH) {
+            throw new BadRequestException(
+                    String.format("Максимальная длина описания - %d символов", MAX_DESCRIPTION_LENGTH));
         }
     }
 }

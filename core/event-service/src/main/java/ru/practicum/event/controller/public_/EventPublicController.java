@@ -6,18 +6,23 @@ import jakarta.validation.constraints.PositiveOrZero;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-import ru.practicum.StatsClient;
+import ru.practicum.ewm.client.UserActionClient;
+import ru.practicum.ewm.client.RecommendationsClient;
 import ru.practicum.event.dto.EventFullDto;
 import ru.practicum.event.dto.EventShortDto;
 import ru.practicum.event.service.EventService;
 import ru.practicum.event.util.EventGetPublicParam;
+import ru.practicum.ewm.stats.proto.ActionTypeProto;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 /**
  * Публичный контроллер для работы с событиями.
@@ -31,10 +36,10 @@ import java.util.concurrent.Executors;
 public class EventPublicController {
 
     private static final String DATE_TIME_FORMAT = "yyyy-MM-dd HH:mm:ss";
-    private static final String APP_NAME = "event-service";
 
     private final EventService eventService;
-    private final StatsClient statsClient;
+    private final UserActionClient userActionClient;
+    private final RecommendationsClient recommendationsClient;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     /**
@@ -46,7 +51,7 @@ public class EventPublicController {
      * @param rangeStart    дата и время не раньше которых должно произойти событие
      * @param rangeEnd      дата и время не позже которых должно произойти событие
      * @param onlyAvailable только события с непросроченным лимитом запросов
-     * @param sort          способ сортировки: EVENT_DATE или VIEWS
+     * @param sort          способ сортировки: EVENT_DATE или RATING
      * @param from          количество событий, которые нужно пропустить для формирования текущего набора
      * @param size          количество событий в наборе
      * @param request       HTTP-запрос для сбора статистики
@@ -84,19 +89,6 @@ public class EventPublicController {
                 .build();
 
         List<EventShortDto> events = eventService.getEventsByPublic(param);
-
-        // Сохраняем статистику асинхронно
-        executorService.submit(() -> {
-            try {
-                boolean saved = statsClient.saveStat(APP_NAME, request.getRequestURI(), request.getRemoteAddr());
-                if (!saved) {
-                    log.warn("Failed to save stats for URI: {}", request.getRequestURI());
-                }
-            } catch (Exception e) {
-                log.error("Error saving stats for URI: {}", request.getRequestURI(), e);
-            }
-        });
-
         return events;
     }
 
@@ -104,29 +96,81 @@ public class EventPublicController {
      * Получает подробную информацию о событии по его идентификатору.
      *
      * @param id      идентификатор события
+     * @param userId  идентификатор пользователя из заголовка
      * @param request HTTP-запрос для сбора статистики
      * @return подробная информация о событии
      */
     @GetMapping("/{id}")
     public EventFullDto getEvent(@PathVariable @Positive long id,
+                                 @RequestHeader("X-EWM-USER-ID") Long userId,
                                  HttpServletRequest request) {
-        log.info("GET /events/{}", id);
+        log.info("GET /events/{} by user {}", id, userId);
 
         EventFullDto eventFullDto = eventService.getEventByPublic(id);
 
-        // Сохраняем статистику асинхронно
+        // Отправляем информацию о просмотре асинхронно
         executorService.submit(() -> {
             try {
-                boolean saved = statsClient.saveStat(APP_NAME, request.getRequestURI(), request.getRemoteAddr());
-                if (!saved) {
-                    log.warn("Failed to save stats for URI: {}", request.getRequestURI());
-                }
+                userActionClient.collectUserAction(userId, id, ActionTypeProto.ACTION_VIEW, Instant.now());
+                log.debug("Sent VIEW action for user {} event {}", userId, id);
             } catch (Exception e) {
-                log.error("Error saving stats for URI: {}", request.getRequestURI(), e);
+                log.error("Error sending VIEW action to collector for user {} event {}", userId, id, e);
             }
         });
 
         return eventFullDto;
+    }
+
+    /**
+     * Получает рекомендации мероприятий для пользователя.
+     *
+     * @param userId     идентификатор пользователя из заголовка
+     * @param maxResults максимальное количество рекомендаций
+     * @return список рекомендуемых событий
+     */
+    @GetMapping("/recommendations")
+    public List<EventShortDto> getRecommendations(
+            @RequestHeader("X-EWM-USER-ID") Long userId,
+            @RequestParam(defaultValue = "10") @Positive int maxResults) {
+
+        log.info("GET /events/recommendations for user {} with maxResults {}", userId, maxResults);
+
+        List<Long> recommendedEventIds = recommendationsClient.getRecommendationsForUser(userId, maxResults)
+                .map(proto -> proto.getEventId())
+                .collect(Collectors.toList());
+
+        List<EventShortDto> recommendations = eventService.getEventsByIds(recommendedEventIds);
+
+        log.info("Returning {} recommendations for user {}", recommendations.size(), userId);
+        return recommendations;
+    }
+
+    /**
+     * Ставит лайк мероприятию.
+     *
+     * @param eventId идентификатор мероприятия
+     * @param userId  идентификатор пользователя из заголовка
+     */
+    @PutMapping("/{eventId}/like")
+    @ResponseStatus(HttpStatus.OK)
+    public void likeEvent(@PathVariable @Positive Long eventId,
+                          @RequestHeader("X-EWM-USER-ID") Long userId) {
+
+        log.info("PUT /events/{}/like by user {}", eventId, userId);
+
+        boolean hasParticipated = eventService.hasUserParticipated(userId, eventId);
+        if (!hasParticipated) {
+            throw new IllegalArgumentException("User can only like events they have participated in");
+        }
+
+        executorService.submit(() -> {
+            try {
+                userActionClient.collectUserAction(userId, eventId, ActionTypeProto.ACTION_LIKE, Instant.now());
+                log.debug("Sent LIKE action for user {} event {}", userId, eventId);
+            } catch (Exception e) {
+                log.error("Error sending LIKE action to collector for user {} event {}", userId, eventId, e);
+            }
+        });
     }
 
     /**

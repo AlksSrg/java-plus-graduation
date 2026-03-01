@@ -44,9 +44,9 @@ public class EventPrivateController {
      * @return событие
      */
     @GetMapping("/{eventId}")
-    public EventFullDto get(@PathVariable @Positive long userId,
-                            @PathVariable @Positive long eventId) {
-        return eventService.get(userId, eventId);
+    public EventFullDto getEvent(@PathVariable @Positive long userId,
+                                 @PathVariable @Positive long eventId) {
+        return eventService.getEventByUser(userId, eventId);
     }
 
     /**
@@ -58,10 +58,10 @@ public class EventPrivateController {
      * @return список событий
      */
     @GetMapping
-    public List<EventShortDto> getAll(@PathVariable @Positive long userId,
-                                      @RequestParam(defaultValue = "0") @PositiveOrZero int from,
-                                      @RequestParam(defaultValue = "10") @Positive int size) {
-        return eventService.getAll(userId, from, size);
+    public List<EventShortDto> getAllEvents(@PathVariable @Positive long userId,
+                                            @RequestParam(defaultValue = "0") @PositiveOrZero int from,
+                                            @RequestParam(defaultValue = "10") @Positive int size) {
+        return eventService.getEventsByUser(userId, from, size);
     }
 
     /**
@@ -73,9 +73,9 @@ public class EventPrivateController {
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    EventFullDto create(@PathVariable @Positive long userId,
-                        @RequestBody @Valid NewEventDto eventDto) {
-        return eventService.create(userId, eventDto);
+    EventFullDto createEvent(@PathVariable @Positive long userId,
+                             @RequestBody @Valid NewEventDto eventDto) {
+        return eventService.createEvent(userId, eventDto);
     }
 
     /**
@@ -87,10 +87,10 @@ public class EventPrivateController {
      * @return обновленное событие
      */
     @PatchMapping("/{eventId}")
-    public EventFullDto update(@PathVariable @Positive long userId,
-                               @PathVariable @Positive long eventId,
-                               @RequestBody @Valid UpdateEventUserRequest updateEvent) {
-        return eventService.update(userId, eventId, updateEvent);
+    public EventFullDto updateEvent(@PathVariable @Positive long userId,
+                                    @PathVariable @Positive long eventId,
+                                    @RequestBody @Valid UpdateEventUserRequest updateEvent) {
+        return eventService.updateEventByUser(userId, eventId, updateEvent);
     }
 
     /**

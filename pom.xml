@@ -16,11 +16,6 @@
 		<module>core</module>              <!-- Содержит все микросервисы и общие модули -->
 		<module>stats</module>              <!-- Модуль статистики -->
 		<module>infra</module>              <!-- Инфраструктурные модули -->
-
-		<module>infra/config-server</module>
-		<module>infra/gateway-server</module>
-		<module>infra/discovery-server</module>
-
 	</modules>
 
 	<groupId>ru.practicum</groupId>
