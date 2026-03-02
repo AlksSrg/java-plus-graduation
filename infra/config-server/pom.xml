@@ -30,7 +30,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>ru.practicum.config.ConfigServer</mainClass>
+                    <mainClass>ru.yandex.practicum.config.ConfigServer</mainClass>
                 </configuration>
             </plugin>
         </plugins>
