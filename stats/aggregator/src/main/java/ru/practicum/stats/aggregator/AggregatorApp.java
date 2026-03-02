@@ -4,17 +4,31 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.context.ConfigurableApplicationContext;
 
-/**
- * Главный класс агрегатора.
- * Запускает Spring Boot приложение и включает сканирование конфигурационных свойств.
- */
+import java.util.concurrent.CountDownLatch;
+
 @SpringBootApplication
 @ConfigurationPropertiesScan
 @EnableDiscoveryClient
 public class AggregatorApp {
 
     public static void main(String[] args) {
-        SpringApplication.run(AggregatorApp.class, args);
+        ConfigurableApplicationContext context = SpringApplication.run(AggregatorApp.class, args);
+
+        // Блокируем главный поток до получения сигнала завершения
+        CountDownLatch shutdownLatch = new CountDownLatch(1);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Получен сигнал завершения, закрываем приложение...");
+            shutdownLatch.countDown();
+        }));
+
+        try {
+            shutdownLatch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            context.close();
+        }
     }
 }

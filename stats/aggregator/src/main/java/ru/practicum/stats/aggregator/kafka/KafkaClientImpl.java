@@ -64,10 +64,14 @@ public class KafkaClientImpl implements KafkaClient {
         log.info("Создание продюсера с bootstrap.servers = {}", config.getBootstrapServers());
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getBootstrapServers());
+
+        AggregatorConfig.ProducerConfig producerCfg = config.getProducer();
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
-                "org.apache.kafka.common.serialization.StringSerializer");
+                producerCfg.getKeySerializer() != null ? producerCfg.getKeySerializer()
+                        : "org.apache.kafka.common.serialization.StringSerializer");
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
-                "ru.practicum.ewm.stats.avro.serializer.EventSimilarityAvroSerializer");
+                producerCfg.getValueSerializer());
+
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         props.put(ProducerConfig.RETRIES_CONFIG, 3);
         props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);

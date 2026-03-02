@@ -15,19 +15,9 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "kafka")
 public class AggregatorConfig {
 
-    /**
-     * Адреса Kafka брокеров.
-     */
     private String bootstrapServers;
-
-    /**
-     * Настройки потребителя.
-     */
     private ConsumerConfig consumer;
-
-    /**
-     * Настройки топиков.
-     */
+    private ProducerConfig producer;
     private TopicsConfig topics;
 
     @Getter
@@ -38,6 +28,13 @@ public class AggregatorConfig {
         private String valueDeserializer;
         private String autoOffsetReset;
         private Boolean enableAutoCommit;
+    }
+
+    @Getter
+    @Setter
+    public static class ProducerConfig {
+        private String keySerializer;
+        private String valueSerializer;
     }
 
     @Getter
