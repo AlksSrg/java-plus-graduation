@@ -4,18 +4,30 @@ import com.google.protobuf.Timestamp;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
-import ru.practicum.ewm.stats.proto.ActionTypeProto;
-import ru.practicum.ewm.stats.proto.UserActionProto;
-import ru.practicum.ewm.stats.proto.UserActionControllerGrpc;
+import ru.practicum.grpc.stats.UserActionControllerGrpc;
+import ru.practicum.grpc.stats.action.ActionTypeProto;
+import ru.practicum.grpc.stats.action.UserActionProto;
 
 import java.time.Instant;
 
+/**
+ * Клиент для отправки действий пользователей в коллектор через gRPC.
+ */
 @Slf4j
 @Service
 public class UserActionClient {
+
     @GrpcClient("collector")
     private UserActionControllerGrpc.UserActionControllerBlockingStub userClient;
 
+    /**
+     * Отправляет действие пользователя.
+     *
+     * @param userId     идентификатор пользователя
+     * @param eventId    идентификатор события
+     * @param actionType тип действия
+     * @param instant    время совершения действия
+     */
     public void collectUserAction(long userId, long eventId, ActionTypeProto actionType, Instant instant) {
         UserActionProto request = buildUserActionRequest(userId, eventId, actionType, instant);
 

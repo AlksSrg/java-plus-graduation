@@ -16,7 +16,7 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Процессор для обработки сообщений о действиях пользователей.
+ * Процессор, непрерывно читающий топик действий пользователей и передающий их обработчику.
  */
 @Slf4j
 @Component
@@ -24,21 +24,18 @@ import java.util.List;
 public class UserActionProcessor implements Runnable {
 
     private final UserActionConsumerService consumer;
-    private final UserActionHandler userActionHandler;
+    private final UserActionHandler handler;
 
     @Value("${kafka.topics.user-actions:telemetry.actions.v1}")
     private String topic;
 
     private volatile boolean running = true;
 
-    /**
-     * Запускает процессор.
-     */
     @Override
     public void run() {
         setupShutdownHook();
         consumer.subscribe(List.of(topic));
-        log.info("Запуск процессора действий, топик: {}", topic);
+        log.info("Запуск процессора действий пользователей, топик: {}", topic);
 
         try {
             while (running) {
@@ -46,31 +43,26 @@ public class UserActionProcessor implements Runnable {
 
                 if (!records.isEmpty()) {
                     log.info("Получено {} записей", records.count());
-
                     for (ConsumerRecord<Long, SpecificRecordBase> record : records) {
                         try {
                             UserActionAvro avro = (UserActionAvro) record.value();
-                            userActionHandler.handle(avro);
+                            handler.handle(avro);
                         } catch (Exception e) {
                             log.error("Ошибка обработки записи offset={}", record.offset(), e);
                         }
                     }
-
                     consumer.commitAsync();
                 }
             }
         } catch (WakeupException e) {
-            log.info("WakeupException при остановке");
+            log.info("WakeupException при остановке процессора действий");
         } catch (Exception e) {
-            log.error("Ошибка в процессоре", e);
+            log.error("Ошибка в процессоре действий", e);
         } finally {
             consumer.close();
         }
     }
 
-    /**
-     * Настраивает хук завершения.
-     */
     private void setupShutdownHook() {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             running = false;

@@ -1,9 +1,18 @@
 package ru.practicum.stats.collector.service;
 
-import com.google.protobuf.Empty;
-import io.grpc.stub.StreamObserver;
-import ru.practicum.ewm.stats.proto.UserActionProto;
 
+import ru.practicum.grpc.stats.action.UserActionProto;
+
+/**
+ * Сервис для обработки действий пользователей.
+ */
 public interface UserActionService {
-    void collectUserAction(UserActionProto request, StreamObserver<Empty> responseObserver);
+
+    /**
+     * Принимает действие пользователя, преобразует его в Avro и отправляет в Kafka.
+     *
+     * @param request действие пользователя в формате Protobuf
+     * @throws IllegalArgumentException если тип действия не поддерживается
+     */
+    void collectUserAction(UserActionProto request);
 }

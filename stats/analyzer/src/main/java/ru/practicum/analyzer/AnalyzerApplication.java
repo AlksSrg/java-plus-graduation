@@ -15,14 +15,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 @EnableDiscoveryClient
 public class AnalyzerApplication {
 
-    /**
-     * Точка входа в приложение Analyzer.
-     *
-     * @param args аргументы командной строки
-     */
     public static void main(String[] args) {
-        log.info("Запуск сервиса Analyzer...");
         SpringApplication.run(AnalyzerApplication.class, args);
-        log.info("Сервис Analyzer успешно запущен");
     }
 }

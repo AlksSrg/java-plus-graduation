@@ -10,8 +10,7 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.LongDeserializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import ru.practicum.ewm.stats.avro.deserializer.EventSimilarityAvroDeserializer;
-
+import ru.practicum.avro.serialization.EventSimilarityDeserializer;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -26,13 +25,6 @@ public class EventSimilarityConsumerService {
 
     private final KafkaConsumer<Long, SpecificRecordBase> kafkaConsumer;
 
-    /**
-     * Конструктор потребителя для топика схожести мероприятий.
-     *
-     * @param bootstrapServers адреса серверов Kafka
-     * @param groupId          идентификатор группы
-     * @param autoCommit       флаг авто-подтверждения смещений
-     */
     public EventSimilarityConsumerService(
             @Value("${kafka.bootstrap-servers}") String bootstrapServers,
             @Value("${kafka.group-id.similarity}") String groupId,
@@ -41,32 +33,18 @@ public class EventSimilarityConsumerService {
         this.kafkaConsumer = new KafkaConsumer<>(createConsumerConfig(bootstrapServers, groupId, autoCommit));
     }
 
-    /**
-     * Создает конфигурацию для Kafka потребителя.
-     *
-     * @param bootstrapServers адреса серверов
-     * @param groupId          группа потребителей
-     * @param autoCommit       авто-подтверждение
-     * @return объект Properties с настройками
-     */
     private Properties createConsumerConfig(String bootstrapServers, String groupId, boolean autoCommit) {
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, autoCommit);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class.getName());
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, EventSimilarityAvroDeserializer.class.getName());
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, EventSimilarityDeserializer.class.getName());
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 100);
         return props;
     }
 
-    /**
-     * Получает записи из Kafka с указанным таймаутом.
-     *
-     * @param duration время ожидания
-     * @return полученные записи
-     */
     public ConsumerRecords<Long, SpecificRecordBase> poll(Duration duration) {
         try {
             return kafkaConsumer.poll(duration);
@@ -79,19 +57,11 @@ public class EventSimilarityConsumerService {
         }
     }
 
-    /**
-     * Подписывает потребителя на топики.
-     *
-     * @param topics список топиков
-     */
     public void subscribe(Collection<String> topics) {
         kafkaConsumer.subscribe(topics);
         log.info("Подписка на топики: {}", topics);
     }
 
-    /**
-     * Асинхронно подтверждает смещения.
-     */
     public void commitAsync() {
         kafkaConsumer.commitAsync((offsets, exception) -> {
             if (exception != null) {
@@ -100,16 +70,10 @@ public class EventSimilarityConsumerService {
         });
     }
 
-    /**
-     * Пробуждает потребителя.
-     */
     public void wakeup() {
         kafkaConsumer.wakeup();
     }
 
-    /**
-     * Закрывает потребителя.
-     */
     @PreDestroy
     public void close() {
         log.info("Закрытие Kafka consumer");

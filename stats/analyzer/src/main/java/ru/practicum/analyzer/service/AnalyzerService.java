@@ -8,16 +8,16 @@ import ru.practicum.analyzer.model.EventSimilarity;
 import ru.practicum.analyzer.service.params.EventSimilarityService;
 import ru.practicum.analyzer.service.params.RecommendationScoringService;
 import ru.practicum.analyzer.service.params.UserActionService;
-import ru.practicum.ewm.stats.proto.InteractionsCountRequestProto;
-import ru.practicum.ewm.stats.proto.RecommendedEventProto;
-import ru.practicum.ewm.stats.proto.SimilarEventsRequestProto;
-import ru.practicum.ewm.stats.proto.UserRecommendationsRequestProto;
+import ru.practicum.grpc.stats.recommendation.InteractionsCountRequestProto;
+import ru.practicum.grpc.stats.recommendation.RecommendedEventProto;
+import ru.practicum.grpc.stats.recommendation.SimilarEventsRequestProto;
+import ru.practicum.grpc.stats.recommendation.UserPredictionsRequestProto;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Основной сервис формирования рекомендаций.
+ * Основной сервис формирования рекомендаций и статистики.
  */
 @Slf4j
 @Service
@@ -32,57 +32,48 @@ public class AnalyzerService {
     /**
      * Получает персональные рекомендации для пользователя.
      *
-     * @param request запрос с ID пользователя
+     * @param request запрос с ID пользователя и максимальным количеством
      * @return список рекомендаций
      */
-    public List<RecommendedEventProto> getRecommendationsForUser(UserRecommendationsRequestProto request) {
+    public List<RecommendedEventProto> getRecommendationsForUser(UserPredictionsRequestProto request) {
         Long userId = request.getUserId();
         int limit = request.getMaxResults();
 
-        log.info("Получение рекомендаций для пользователя: {}, лимит: {}", userId, limit);
+        log.info("Запрос рекомендаций для пользователя {}, лимит {}", userId, limit);
 
-        Set<Long> viewedEvents = userActionService.getRecentlyViewedEventIds(userId, limit);
-        if (viewedEvents.isEmpty()) {
+        Set<Long> viewed = userActionService.getRecentlyViewedEventIds(userId, limit);
+        if (viewed.isEmpty()) {
             log.info("Нет просмотренных событий для пользователя {}", userId);
             return Collections.emptyList();
         }
 
-        Set<Long> candidates = findCandidateRecommendations(userId, viewedEvents, limit);
+        Set<Long> candidates = findCandidates(userId, viewed, limit);
         log.info("Найдено кандидатов: {}", candidates.size());
 
         return generateRecommendations(candidates, userId, limit);
     }
 
-    /**
-     * Находит кандидатов для рекомендаций.
-     */
-    private Set<Long> findCandidateRecommendations(Long userId, Set<Long> viewedEvents, int limit) {
-        List<EventSimilarity> simA = similarityService.findSimilarByEventAIn(viewedEvents, limit);
-        List<EventSimilarity> simB = similarityService.findSimilarByEventBIn(viewedEvents, limit);
-
+    private Set<Long> findCandidates(Long userId, Set<Long> viewed, int limit) {
+        List<EventSimilarity> simA = similarityService.findSimilarByEventAIn(viewed, limit);
+        List<EventSimilarity> simB = similarityService.findSimilarByEventBIn(viewed, limit);
         Set<Long> candidates = new HashSet<>();
+
         addCandidates(simA, true, userId, candidates);
         addCandidates(simB, false, userId, candidates);
 
         return candidates;
     }
 
-    /**
-     * Добавляет кандидатов из списка схожести.
-     */
     private void addCandidates(List<EventSimilarity> similarities, boolean isEventB,
                                Long userId, Set<Long> candidates) {
         for (EventSimilarity es : similarities) {
-            Long candidateId = isEventB ? es.getEventB() : es.getEventA();
-            if (!userActionService.hasUserInteractedWithEvent(userId, candidateId)) {
-                candidates.add(candidateId);
+            Long candId = isEventB ? es.getEventB() : es.getEventA();
+            if (!userActionService.hasUserInteractedWithEvent(userId, candId)) {
+                candidates.add(candId);
             }
         }
     }
 
-    /**
-     * Генерирует рекомендации с оценками.
-     */
     private List<RecommendedEventProto> generateRecommendations(Set<Long> candidates, Long userId, int limit) {
         Map<Long, Double> scores = candidates.stream()
                 .collect(Collectors.toMap(
@@ -101,23 +92,22 @@ public class AnalyzerService {
     }
 
     /**
-     * Находит похожие мероприятия.
+     * Получает список событий, похожих на заданное.
      *
-     * @param request запрос с ID мероприятия
-     * @return список похожих мероприятий
+     * @param request запрос с ID события и пользователя
+     * @return список похожих событий с оценками
      */
     public List<RecommendedEventProto> getSimilarEvents(SimilarEventsRequestProto request) {
         Long eventId = request.getEventId();
         Long userId = request.getUserId();
         int limit = request.getMaxResults();
 
-        log.info("Поиск похожих на событие: {}, пользователь: {}, лимит: {}", eventId, userId, limit);
+        log.info("Запрос похожих на событие {}, пользователь {}, лимит {}", eventId, userId, limit);
 
         List<EventSimilarity> simA = similarityService.findSimilarByEventA(eventId, limit);
         List<EventSimilarity> simB = similarityService.findSimilarByEventB(eventId, limit);
 
         List<RecommendedEventProto> recommendations = new ArrayList<>();
-
         similarityService.filterAndAddRecommendations(recommendations, simA, true, userId);
         similarityService.filterAndAddRecommendations(recommendations, simB, false, userId);
 
@@ -126,17 +116,14 @@ public class AnalyzerService {
     }
 
     /**
-     * Получает статистику взаимодействий.
+     * Возвращает суммарное количество взаимодействий для запрошенных событий.
      *
-     * @param request запрос со списком мероприятий
-     * @return статистика по мероприятиям
+     * @param request запрос со списком ID событий
+     * @return статистика (ID события -> вес)
      */
     public List<RecommendedEventProto> getInteractionsCount(InteractionsCountRequestProto request) {
         Set<Long> eventIds = new HashSet<>(request.getEventIdList());
-        log.info("Получение статистики для {} событий", eventIds.size());
-
         Map<Long, Double> scores = userActionService.computeEventScores(eventIds);
-
         return scores.entrySet().stream()
                 .map(e -> RecommendedEventProto.newBuilder()
                         .setEventId(e.getKey())

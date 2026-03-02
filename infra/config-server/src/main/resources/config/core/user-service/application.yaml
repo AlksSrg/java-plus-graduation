@@ -2,9 +2,6 @@ server:
   port: 0
 
 spring:
-  application:
-    name: user-service
-
   datasource:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://localhost:8032/main?currentSchema=user_schema

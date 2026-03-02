@@ -1,6 +1,7 @@
 package ru.practicum.analyzer.repository;
 
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import ru.practicum.analyzer.model.UserAction;
@@ -19,10 +20,10 @@ public interface UserActionRepository extends JpaRepository<UserAction, Long> {
      * Находит действия пользователя.
      *
      * @param userId      ID пользователя
-     * @param pageRequest параметры пагинации
+     * @param pageable параметры пагинации
      * @return список действий
      */
-    List<UserAction> findAllByUserId(Long userId, PageRequest pageRequest);
+    List<UserAction> findAllByUserId(Long userId, Pageable pageable);
 
     /**
      * Находит действия по набору мероприятий для пользователя.

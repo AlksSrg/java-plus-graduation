@@ -1,6 +1,7 @@
 package ru.practicum.analyzer.repository;
 
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import ru.practicum.analyzer.model.EventSimilarity;
@@ -18,35 +19,35 @@ public interface EventSimilarityRepository extends JpaRepository<EventSimilarity
      * Находит записи по набору eventA.
      *
      * @param eventIds    набор ID
-     * @param pageRequest параметры пагинации
+     * @param pageable параметры пагинации
      * @return список записей
      */
-    List<EventSimilarity> findAllByEventAIn(Set<Long> eventIds, PageRequest pageRequest);
+    List<EventSimilarity> findAllByEventAIn(Set<Long> eventIds, Pageable pageable);
 
     /**
      * Находит записи по набору eventB.
      *
      * @param eventIds    набор ID
-     * @param pageRequest параметры пагинации
+     * @param pageable параметры пагинации
      * @return список записей
      */
-    List<EventSimilarity> findAllByEventBIn(Set<Long> eventIds, PageRequest pageRequest);
+    List<EventSimilarity> findAllByEventBIn(Set<Long> eventIds, Pageable pageable);
 
     /**
      * Находит записи по eventA.
      *
      * @param eventId     ID мероприятия
-     * @param pageRequest параметры пагинации
+     * @param pageable параметры пагинации
      * @return список записей
      */
-    List<EventSimilarity> findAllByEventA(Long eventId, PageRequest pageRequest);
+    List<EventSimilarity> findAllByEventA(Long eventId, Pageable pageable);
 
     /**
      * Находит записи по eventB.
      *
      * @param eventId     ID мероприятия
-     * @param pageRequest параметры пагинации
+     * @param pageable параметры пагинации
      * @return список записей
      */
-    List<EventSimilarity> findAllByEventB(Long eventId, PageRequest pageRequest);
+    List<EventSimilarity> findAllByEventB(Long eventId, Pageable pageable);
 }

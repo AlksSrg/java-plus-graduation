@@ -3,10 +3,12 @@ package ru.practicum.config;
 import feign.Response;
 import feign.codec.ErrorDecoder;
 import lombok.extern.slf4j.Slf4j;
+import ru.practicum.exception.ConflictResource;
+import ru.practicum.exception.NotFoundResource;
 
 /**
  * Дешифратор ошибок для Feign-клиентов.
- * Преобразует HTTP ошибки в понятные исключения.
+ * Преобразует HTTP-статусы в специфические исключения.
  */
 @Slf4j
 public class FeignErrorDecoder implements ErrorDecoder {
@@ -15,16 +17,12 @@ public class FeignErrorDecoder implements ErrorDecoder {
 
     @Override
     public Exception decode(String methodKey, Response response) {
-        log.error("Error occurred while calling {} with status: {}", methodKey, response.status());
+        log.error("Ошибка при вызове {}: статус {}", methodKey, response.status());
 
-        // Здесь можно добавить кастомную обработку разных статусов
-        switch (response.status()) {
-            case 404:
-                return new RuntimeException("Resource not found");
-            case 409:
-                return new RuntimeException("Conflict occurred");
-            default:
-                return defaultDecoder.decode(methodKey, response);
-        }
+        return switch (response.status()) {
+            case 404 -> new NotFoundResource("Ресурс не найден при вызове " + methodKey);
+            case 409 -> new ConflictResource("Конфликт при вызове " + methodKey);
+            default -> defaultDecoder.decode(methodKey, response);
+        };
     }
 }

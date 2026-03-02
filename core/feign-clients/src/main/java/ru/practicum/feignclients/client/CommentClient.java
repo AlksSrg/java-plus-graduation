@@ -5,24 +5,24 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import ru.practicum.comment.dto.CommentDto;
+import ru.practicum.config.FeignConfiguration;
 
 import java.util.List;
 
 /**
  * Feign-клиент для взаимодействия с comment-service.
- * Позволяет другим микросервисам получать данные о комментариях.
+ * Позволяет получать комментарии к событиям.
  */
-@FeignClient(name = "comment-service", path = "/events/{eventId}/comments")
+@FeignClient(name = "comment-service", path = "/events/{eventId}/comments", configuration = FeignConfiguration.class)
 public interface CommentClient {
 
     /**
      * Получает все комментарии для указанного события.
-     * Используется другими сервисами (например, event-service) для отображения списка комментариев.
      *
      * @param eventId   идентификатор события
-     * @param authorIds список идентификаторов авторов для фильтрации
-     * @param from      количество элементов для пропуска
-     * @param size      количество элементов для выборки
+     * @param authorIds список идентификаторов авторов для фильтрации (опционально)
+     * @param from      смещение для пагинации
+     * @param size      количество элементов на странице
      * @return список DTO комментариев
      */
     @GetMapping

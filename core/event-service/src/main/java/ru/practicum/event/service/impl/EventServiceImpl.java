@@ -2,7 +2,6 @@ package ru.practicum.event.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -19,21 +18,27 @@ import ru.practicum.event.util.EventGetAdminParam;
 import ru.practicum.event.util.EventGetPublicParam;
 import ru.practicum.event.util.EventSort;
 import ru.practicum.event.util.State;
-import ru.practicum.event.util.StateActionUser;
+import ru.practicum.ewm.client.RecommendationsClient;
+import ru.practicum.ewm.client.UserActionClient;
 import ru.practicum.exception.BadRequestException;
 import ru.practicum.exception.ConflictResource;
 import ru.practicum.exception.NotFoundResource;
 import ru.practicum.feignclients.client.CategoryClient;
 import ru.practicum.feignclients.client.RequestClient;
 import ru.practicum.feignclients.client.UserClient;
+import ru.practicum.grpc.stats.action.ActionTypeProto;
+import ru.practicum.grpc.stats.recommendation.RecommendedEventProto;
 import ru.practicum.request.dto.ParticipationRequestDto;
 import ru.practicum.request.util.Status;
 import ru.practicum.user.dto.UserDto;
 import ru.practicum.user.dto.UserShortDto;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -49,64 +54,26 @@ public class EventServiceImpl implements EventService {
     private final UserClient userClient;
     private final CategoryClient categoryClient;
     private final RequestClient requestClient;
+    private final RecommendationsClient recommendationsClient;
+    private final UserActionClient userActionClient;
     private final EventMapper eventMapper;
 
+    private final ExecutorService executorService = Executors.newCachedThreadPool();
+
     private static final String EVENT_NOT_FOUND_MESSAGE = "Событие с id = %d не найдено";
-    private static final int MAX_TITLE_LENGTH = 120;
-    private static final int MAX_ANNOTATION_LENGTH = 2000;
-    private static final int MAX_DESCRIPTION_LENGTH = 7000;
     private static final int MIN_HOURS_BEFORE_EVENT = 2;
+
+    // ========================== Публичные методы (админ) ==========================
 
     @Override
     public List<EventFullDto> getEventsByAdmin(EventGetAdminParam param) {
         log.info("Поиск событий по параметрам администратора: {}", param);
 
-        Specification<Event> specification = Specification.where(null);
-
-        if (param.getUsers() != null && !param.getUsers().isEmpty()) {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    root.get("initiatorId").in(param.getUsers()));
-        }
-
-        if (param.getStates() != null && !param.getStates().isEmpty()) {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    root.get("state").in(param.getStates()));
-        }
-
-        if (param.getCategories() != null && !param.getCategories().isEmpty()) {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    root.get("categoryId").in(param.getCategories()));
-        }
-
-        if (param.getRangeStart() != null) {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    criteriaBuilder.greaterThanOrEqualTo(root.get("eventDate"), param.getRangeStart()));
-        }
-
-        if (param.getRangeEnd() != null) {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    criteriaBuilder.lessThanOrEqualTo(root.get("eventDate"), param.getRangeEnd()));
-        }
-
+        Specification<Event> spec = buildAdminSpecification(param);
         Pageable pageable = PageRequest.of(param.getFrom() / param.getSize(), param.getSize());
+        List<Event> events = eventRepository.findAll(spec, pageable).getContent();
 
-        Page<Event> eventPage = eventRepository.findAll(specification, pageable);
-        List<Event> events = eventPage.getContent();
-        log.info("Найдено {} событий", events.size());
-
-        // Получаем количество подтвержденных запросов для всех событий
-        List<Long> eventIds = events.stream().map(Event::getId).collect(Collectors.toList());
-        Map<Long, Long> confirmedCounts = requestClient.countConfirmedRequestsByEventIds(eventIds);
-
-        return events.stream()
-                .map(event -> {
-                    CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
-                    UserShortDto user = getUserShortDto(event.getInitiatorId());
-                    // Обновляем confirmedRequests из ответа request-service
-                    event.setConfirmedRequests(confirmedCounts.getOrDefault(event.getId(), 0L));
-                    return eventMapper.toFullDto(event, category, user);
-                })
-                .collect(Collectors.toList());
+        return enrichEventFullDtos(events);
     }
 
     @Override
@@ -116,47 +83,10 @@ public class EventServiceImpl implements EventService {
 
         Event event = findEventById(eventId);
 
-        if (updateRequest.getAnnotation() != null) {
-            validateAnnotation(updateRequest.getAnnotation());
-            event.setAnnotation(updateRequest.getAnnotation());
-        }
+        // Обновление полей
+        updateEventFields(event, updateRequest);
 
-        if (updateRequest.getCategory() != null) {
-            CategoryDto category = categoryClient.getCategoryById(updateRequest.getCategory());
-            event.setCategoryId(category.getId());
-        }
-
-        if (updateRequest.getDescription() != null) {
-            validateDescription(updateRequest.getDescription());
-            event.setDescription(updateRequest.getDescription());
-        }
-
-        if (updateRequest.getEventDate() != null) {
-            validateEventDate(updateRequest.getEventDate());
-            event.setEventDate(updateRequest.getEventDate());
-        }
-
-        if (updateRequest.getLocation() != null) {
-            event.setLocation(updateRequest.getLocation());
-        }
-
-        if (updateRequest.getPaid() != null) {
-            event.setPaid(updateRequest.getPaid());
-        }
-
-        if (updateRequest.getParticipantLimit() != null) {
-            event.setParticipantLimit(updateRequest.getParticipantLimit());
-        }
-
-        if (updateRequest.getRequestModeration() != null) {
-            event.setRequestModeration(updateRequest.getRequestModeration());
-        }
-
-        if (updateRequest.getTitle() != null) {
-            validateTitle(updateRequest.getTitle());
-            event.setTitle(updateRequest.getTitle());
-        }
-
+        // Обработка статуса
         if (updateRequest.getStateAction() != null) {
             switch (updateRequest.getStateAction()) {
                 case PUBLISH_EVENT:
@@ -170,102 +100,25 @@ public class EventServiceImpl implements EventService {
             }
         }
 
-        Event updatedEvent = eventRepository.save(event);
-        log.info("Событие с id = {} успешно обновлено", eventId);
-
-        CategoryDto category = categoryClient.getCategoryById(updatedEvent.getCategoryId());
-        UserShortDto user = getUserShortDto(updatedEvent.getInitiatorId());
-        // Получаем актуальное количество подтвержденных запросов
-        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
-        updatedEvent.setConfirmedRequests(confirmedCount);
-
-        return eventMapper.toFullDto(updatedEvent, category, user);
+        Event saved = eventRepository.save(event);
+        log.info("Событие с id = {} успешно обновлено администратором", eventId);
+        return enrichEventFullDto(saved);
     }
+
+    // ========================== Публичные методы (публичный доступ) ==========================
 
     @Override
     public List<EventShortDto> getEventsByPublic(EventGetPublicParam param) {
         log.info("Поиск событий по публичным параметрам: {}", param);
 
-        if (param.getRangeStart() != null && param.getRangeEnd() != null) {
-            if (param.getRangeEnd().isBefore(param.getRangeStart())) {
-                throw new BadRequestException("Дата окончания не может быть раньше даты начала");
-            }
-        }
+        validateRange(param.getRangeStart(), param.getRangeEnd());
 
-        Specification<Event> specification = Specification.where((root, query, criteriaBuilder) ->
-                criteriaBuilder.equal(root.get("state"), State.PUBLISHED));
-
-        if (param.getText() != null && !param.getText().isBlank()) {
-            String searchText = "%" + param.getText().toLowerCase() + "%";
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    criteriaBuilder.or(
-                            criteriaBuilder.like(criteriaBuilder.lower(root.get("annotation")), searchText),
-                            criteriaBuilder.like(criteriaBuilder.lower(root.get("description")), searchText)
-                    ));
-        }
-
-        if (param.getCategories() != null && !param.getCategories().isEmpty()) {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    root.get("categoryId").in(param.getCategories()));
-        }
-
-        if (param.getPaid() != null) {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    criteriaBuilder.equal(root.get("paid"), param.getPaid()));
-        }
-
-        if (param.getRangeStart() != null) {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    criteriaBuilder.greaterThanOrEqualTo(root.get("eventDate"), param.getRangeStart()));
-        } else {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    criteriaBuilder.greaterThanOrEqualTo(root.get("eventDate"), LocalDateTime.now()));
-        }
-
-        if (param.getRangeEnd() != null) {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    criteriaBuilder.lessThanOrEqualTo(root.get("eventDate"), param.getRangeEnd()));
-        }
-
-        if (param.getOnlyAvailable() != null && param.getOnlyAvailable()) {
-            specification = specification.and((root, query, criteriaBuilder) ->
-                    criteriaBuilder.or(
-                            criteriaBuilder.equal(root.get("participantLimit"), 0),
-                            criteriaBuilder.lessThan(
-                                    root.get("confirmedRequests"),
-                                    root.get("participantLimit")
-                            )
-                    ));
-        }
-
-        Sort sort = Sort.unsorted();
-        if (param.getSort() != null) {
-            // В EventSort нет RATING, пока оставляем сортировку только по EVENT_DATE
-            if (param.getSort().equals(EventSort.EVENT_DATE.toString())) {
-                sort = Sort.by(Sort.Direction.ASC, "eventDate");
-            } else {
-                log.warn("Неизвестный тип сортировки: {}", param.getSort());
-            }
-        }
-
+        Specification<Event> spec = buildPublicSpecification(param);
+        Sort sort = buildSort(param.getSort());
         Pageable pageable = PageRequest.of(param.getFrom() / param.getSize(), param.getSize(), sort);
-        Page<Event> eventPage = eventRepository.findAll(specification, pageable);
-        List<Event> events = eventPage.getContent();
-        log.info("Найдено {} опубликованных событий", events.size());
 
-        // Получаем количество подтвержденных запросов для всех событий
-        List<Long> eventIds = events.stream().map(Event::getId).collect(Collectors.toList());
-        Map<Long, Long> confirmedCounts = requestClient.countConfirmedRequestsByEventIds(eventIds);
-
-        return events.stream()
-                .map(event -> {
-                    CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
-                    UserShortDto user = getUserShortDto(event.getInitiatorId());
-                    // Обновляем confirmedRequests из ответа request-service
-                    event.setConfirmedRequests(confirmedCounts.getOrDefault(event.getId(), 0L));
-                    return eventMapper.toShortDto(event, category, user);
-                })
-                .collect(Collectors.toList());
+        List<Event> events = eventRepository.findAll(spec, pageable).getContent();
+        return enrichEventShortDtos(events);
     }
 
     @Override
@@ -279,42 +132,19 @@ public class EventServiceImpl implements EventService {
             throw new NotFoundResource(String.format(EVENT_NOT_FOUND_MESSAGE, id));
         }
 
-        log.info("Событие с id = {} найдено", id);
-
-        // Получаем актуальное количество подтвержденных запросов
-        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(id);
-        event.setConfirmedRequests(confirmedCount);
-
-        CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
-        UserShortDto user = getUserShortDto(event.getInitiatorId());
-        return eventMapper.toFullDto(event, category, user);
+        return enrichEventFullDto(event);
     }
+
+    // ========================== Методы пользователя ==========================
 
     @Override
     public List<EventShortDto> getEventsByUser(Long userId, int from, int size) {
         log.info("Получение событий пользователя с id = {}", userId);
-
         userClient.getUserById(userId);
 
         Pageable pageable = PageRequest.of(from / size, size);
-        Page<Event> eventPage = eventRepository.findByInitiatorId(userId, pageable);
-        List<Event> events = eventPage.getContent();
-
-        log.info("Найдено {} событий пользователя с id = {}", events.size(), userId);
-
-        // Получаем количество подтвержденных запросов для всех событий
-        List<Long> eventIds = events.stream().map(Event::getId).collect(Collectors.toList());
-        Map<Long, Long> confirmedCounts = requestClient.countConfirmedRequestsByEventIds(eventIds);
-
-        return events.stream()
-                .map(event -> {
-                    CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
-                    UserShortDto user = getUserShortDto(event.getInitiatorId());
-                    // Обновляем confirmedRequests из ответа request-service
-                    event.setConfirmedRequests(confirmedCounts.getOrDefault(event.getId(), 0L));
-                    return eventMapper.toShortDto(event, category, user);
-                })
-                .collect(Collectors.toList());
+        List<Event> events = eventRepository.findByInitiatorId(userId, pageable).getContent();
+        return enrichEventShortDtos(events);
     }
 
     @Override
@@ -323,9 +153,6 @@ public class EventServiceImpl implements EventService {
         log.info("Создание нового события пользователем с id = {}: {}", userId, newEventDto);
 
         validateEventDate(newEventDto.getEventDate());
-        validateTitle(newEventDto.getTitle());
-        validateAnnotation(newEventDto.getAnnotation());
-        validateDescription(newEventDto.getDescription());
 
         UserDto user = userClient.getUserById(userId);
         CategoryDto category = categoryClient.getCategoryById(newEventDto.getCategory());
@@ -333,12 +160,13 @@ public class EventServiceImpl implements EventService {
         Event event = eventMapper.toEntity(newEventDto);
         event.setInitiatorId(user.getId());
         event.setCategoryId(category.getId());
+        event.setCreatedOn(LocalDateTime.now());
+        event.setState(State.PENDING);
 
-        Event savedEvent = eventRepository.save(event);
-        log.info("Событие с id = {} успешно создано", savedEvent.getId());
+        Event saved = eventRepository.save(event);
+        log.info("Событие с id = {} успешно создано", saved.getId());
 
-        UserShortDto userShort = getUserShortDto(user.getId());
-        return eventMapper.toFullDto(savedEvent, category, userShort);
+        return enrichEventFullDto(saved);
     }
 
     @Override
@@ -346,18 +174,11 @@ public class EventServiceImpl implements EventService {
         log.info("Получение события с id = {} пользователя с id = {}", eventId, userId);
 
         userClient.getUserById(userId);
-
         Event event = eventRepository.findByIdAndInitiatorId(eventId, userId)
                 .orElseThrow(() -> new NotFoundResource(
                         String.format("Событие с id = %d у пользователя с id = %d не найдено", eventId, userId)));
 
-        // Получаем актуальное количество подтвержденных запросов
-        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
-        event.setConfirmedRequests(confirmedCount);
-
-        CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
-        UserShortDto user = getUserShortDto(event.getInitiatorId());
-        return eventMapper.toFullDto(event, category, user);
+        return enrichEventFullDto(event);
     }
 
     @Override
@@ -366,7 +187,6 @@ public class EventServiceImpl implements EventService {
         log.info("Обновление события с id = {} пользователем с id = {}: {}", eventId, userId, updateRequest);
 
         userClient.getUserById(userId);
-
         Event event = eventRepository.findByIdAndInitiatorId(eventId, userId)
                 .orElseThrow(() -> new NotFoundResource(
                         String.format("Событие с id = %d у пользователя с id = %d не найдено", eventId, userId)));
@@ -375,89 +195,30 @@ public class EventServiceImpl implements EventService {
             throw new ConflictResource("Нельзя изменить опубликованное событие");
         }
 
-        if (updateRequest.getAnnotation() != null) {
-            validateAnnotation(updateRequest.getAnnotation());
-            event.setAnnotation(updateRequest.getAnnotation());
-        }
-
-        if (updateRequest.getCategory() != null) {
-            CategoryDto category = categoryClient.getCategoryById(updateRequest.getCategory());
-            event.setCategoryId(category.getId());
-        }
-
-        if (updateRequest.getDescription() != null) {
-            validateDescription(updateRequest.getDescription());
-            event.setDescription(updateRequest.getDescription());
-        }
-
-        if (updateRequest.getEventDate() != null) {
-            validateEventDate(updateRequest.getEventDate());
-            event.setEventDate(updateRequest.getEventDate());
-        }
-
-        if (updateRequest.getLocation() != null) {
-            event.setLocation(updateRequest.getLocation());
-        }
-
-        if (updateRequest.getPaid() != null) {
-            event.setPaid(updateRequest.getPaid());
-        }
-
-        if (updateRequest.getParticipantLimit() != null) {
-            event.setParticipantLimit(updateRequest.getParticipantLimit());
-        }
-
-        if (updateRequest.getRequestModeration() != null) {
-            event.setRequestModeration(updateRequest.getRequestModeration());
-        }
-
-        if (updateRequest.getTitle() != null) {
-            validateTitle(updateRequest.getTitle());
-            event.setTitle(updateRequest.getTitle());
-        }
+        updateEventFields(event, updateRequest);
 
         if (updateRequest.getStateAction() != null) {
-            if (updateRequest.getStateAction() == StateActionUser.CANCEL_REVIEW) {
-                event.setState(State.CANCELED);
-            } else if (updateRequest.getStateAction() == StateActionUser.SEND_TO_REVIEW) {
-                event.setState(State.PENDING);
+            switch (updateRequest.getStateAction()) {
+                case SEND_TO_REVIEW:
+                    event.sendToReview();
+                    break;
+                case CANCEL_REVIEW:
+                    event.cancel();
+                    break;
             }
         }
 
-        Event updatedEvent = eventRepository.save(event);
+        Event saved = eventRepository.save(event);
         log.info("Событие с id = {} успешно обновлено пользователем", eventId);
-
-        // Получаем актуальное количество подтвержденных запросов
-        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
-        updatedEvent.setConfirmedRequests(confirmedCount);
-
-        CategoryDto category = categoryClient.getCategoryById(updatedEvent.getCategoryId());
-        UserShortDto user = getUserShortDto(updatedEvent.getInitiatorId());
-        return eventMapper.toFullDto(updatedEvent, category, user);
-    }
-
-    @Override
-    public EventFullDto getEventByIdInternal(Long eventId) {
-        log.info("Internal call: получение события с id = {}", eventId);
-        Event event = findEventById(eventId);
-
-        // Получаем актуальное количество подтвержденных запросов
-        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
-        event.setConfirmedRequests(confirmedCount);
-
-        CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
-        UserShortDto user = getUserShortDto(event.getInitiatorId());
-        return eventMapper.toFullDto(event, category, user);
+        return enrichEventFullDto(saved);
     }
 
     @Override
     public List<ParticipationRequestDto> getRequests(Long userId, Long eventId) {
         log.info("Получение запросов для события {} пользователя {}", eventId, userId);
-        // Проверяем, что событие принадлежит пользователю
         eventRepository.findByIdAndInitiatorId(eventId, userId)
                 .orElseThrow(() -> new NotFoundResource(
                         String.format("Событие с id = %d у пользователя с id = %d не найдено", eventId, userId)));
-
         return requestClient.getRequestsByEventId(eventId);
     }
 
@@ -466,117 +227,209 @@ public class EventServiceImpl implements EventService {
     public EventRequestStatusUpdateResult updateRequestStatus(Long userId, Long eventId,
                                                               EventRequestStatusUpdateRequest request) {
         log.info("Обновление статусов запросов для события {} пользователя {}", eventId, userId);
-        // Проверяем, что событие принадлежит пользователю
+
         Event event = eventRepository.findByIdAndInitiatorId(eventId, userId)
                 .orElseThrow(() -> new NotFoundResource(
                         String.format("Событие с id = %d у пользователя с id = %d не найдено", eventId, userId)));
 
-        EventRequestStatusUpdateResult result = new EventRequestStatusUpdateResult();
-
-        // Обрабатываем каждый запрос индивидуально
-        for (Long requestId : request.getRequestIds()) {
-            ParticipationRequestDto updatedRequest = requestClient.updateRequestStatus(requestId, request.getStatus());
-
-            if (request.getStatus() == Status.CONFIRMED) {
-                // Обновляем количество подтвержденных запросов
-                Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
-                event.setConfirmedRequests(confirmedCount);
-                eventRepository.save(event);
-
-                result.getConfirmedRequests().add(updatedRequest);
-            } else {
-                result.getRejectedRequests().add(updatedRequest);
+        // Проверка лимитов перед подтверждением
+        if (request.getStatus() == Status.CONFIRMED) {
+            long confirmedNow = requestClient.countConfirmedRequestsByEventId(eventId);
+            if (event.getParticipantLimit() > 0 && confirmedNow >= event.getParticipantLimit()) {
+                throw new ConflictResource("Достигнут лимит участников");
             }
+        }
+
+        EventRequestStatusUpdateResult result = new EventRequestStatusUpdateResult();
+        for (Long reqId : request.getRequestIds()) {
+            ParticipationRequestDto updated = requestClient.updateRequestStatus(reqId, request.getStatus());
+            if (request.getStatus() == Status.CONFIRMED) {
+                result.getConfirmedRequests().add(updated);
+            } else {
+                result.getRejectedRequests().add(updated);
+            }
+        }
+
+        // Обновляем confirmedRequests в событии
+        if (request.getStatus() == Status.CONFIRMED) {
+            long totalConfirmed = requestClient.countConfirmedRequestsByEventId(eventId);
+            event.setConfirmedRequests(totalConfirmed);
+            eventRepository.save(event);
         }
 
         return result;
     }
 
-    @Override
-    public List<EventShortDto> getEventsByIds(List<Long> ids) {
-        log.info("Получение событий по идентификаторам: {}", ids);
-
-        if (ids == null || ids.isEmpty()) {
-            return List.of();
-        }
-
-        List<Event> events = eventRepository.findAllById(ids);
-        log.info("Найдено {} событий", events.size());
-
-        // Получаем количество подтвержденных запросов для всех событий
-        Map<Long, Long> confirmedCounts = requestClient.countConfirmedRequestsByEventIds(ids);
-
-        return events.stream()
-                .map(event -> {
-                    CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
-                    UserShortDto user = getUserShortDto(event.getInitiatorId());
-                    // Обновляем confirmedRequests из ответа request-service
-                    event.setConfirmedRequests(confirmedCounts.getOrDefault(event.getId(), 0L));
-                    return eventMapper.toShortDto(event, category, user);
-                })
-                .collect(Collectors.toList());
-    }
+    // ========================== Внутренние методы (для других микросервисов) ==========================
 
     @Override
-    public EventShortDto getEventShortById(Long eventId) {
-        log.info("Получение краткой информации о событии с id = {}", eventId);
-
+    public EventFullDto getEventByIdInternal(Long eventId) {
+        log.info("Internal call: получение события с id = {}", eventId);
         Event event = findEventById(eventId);
-
-        // Получаем актуальное количество подтвержденных запросов
-        Long confirmedCount = requestClient.countConfirmedRequestsByEventId(eventId);
-        event.setConfirmedRequests(confirmedCount);
-
-        CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
-        UserShortDto user = getUserShortDto(event.getInitiatorId());
-        return eventMapper.toShortDto(event, category, user);
-    }
-
-    @Override
-    public Boolean existsEventById(Long eventId) {
-        log.info("Проверка существования события с id = {}", eventId);
-        return eventRepository.existsById(eventId);
-    }
-
-    @Override
-    public Boolean existsByCategoryId(Long categoryId) {
-        log.info("Проверка существования событий с категорией id = {}", categoryId);
-        return eventRepository.existsByCategoryId(categoryId);
+        return enrichEventFullDto(event);
     }
 
     @Override
     public Event findEventById(Long eventId) {
-        log.info("Поиск события по id = {}", eventId);
         return eventRepository.findById(eventId)
                 .orElseThrow(() -> new NotFoundResource(String.format(EVENT_NOT_FOUND_MESSAGE, eventId)));
     }
 
     @Override
-    public boolean hasUserParticipated(Long userId, Long eventId) {
-        log.info("Проверка участия пользователя {} в событии {}", userId, eventId);
+    public Boolean existsEventById(Long eventId) {
+        return eventRepository.existsById(eventId);
+    }
 
+    @Override
+    public Boolean existsByCategoryId(Long categoryId) {
+        return eventRepository.existsByCategoryId(categoryId);
+    }
+
+    @Override
+    public List<EventShortDto> getEventsByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<Event> events = eventRepository.findByIdIn(ids);
+        return enrichEventShortDtos(events);
+    }
+
+    @Override
+    public EventShortDto getEventShortById(Long eventId) {
+        Event event = findEventById(eventId);
+        return enrichEventShortDto(event);
+    }
+
+    @Override
+    public boolean hasUserParticipated(Long userId, Long eventId) {
         try {
             List<ParticipationRequestDto> requests = requestClient.getRequestsByEventId(eventId);
-            boolean participated = requests.stream()
-                    .anyMatch(request -> request.getRequester().equals(userId) &&
-                            request.getStatus() == Status.CONFIRMED);
-
-            log.info("Пользователь {} {} в событии {}",
-                    userId, participated ? "участвовал" : "не участвовал", eventId);
-            return participated;
+            return requests.stream()
+                    .anyMatch(r -> r.getRequester().equals(userId) && r.getStatus() == Status.CONFIRMED);
         } catch (Exception e) {
             log.error("Ошибка при проверке участия пользователя {} в событии {}", userId, eventId, e);
             return false;
         }
     }
 
-    /**
-     * Получает краткую информацию о пользователе.
-     *
-     * @param userId идентификатор пользователя
-     * @return краткое DTO пользователя
-     */
-    private UserShortDto getUserShortDto(Long userId) {
+    // ========================== Лайки и рекомендации ==========================
+
+    @Override
+    @Transactional
+    public void addLike(Long userId, Long eventId) {
+        log.info("Добавление лайка: userId={}, eventId={}", userId, eventId);
+
+        userClient.getUserById(userId);
+        findEventById(eventId); // проверка существования события
+
+        if (!hasUserParticipated(userId, eventId)) {
+            throw new ConflictResource("Пользователь может ставить лайк только событиям, в которых участвовал");
+        }
+
+        executorService.submit(() -> {
+            try {
+                userActionClient.collectUserAction(userId, eventId, ActionTypeProto.ACTION_LIKE, Instant.now());
+                log.debug("Лайк отправлен: userId={}, eventId={}", userId, eventId);
+            } catch (Exception e) {
+                log.error("Ошибка при отправке лайка", e);
+            }
+        });
+    }
+
+    @Override
+    public List<EventShortDto> getRecommendations(Long userId, int maxResults) {
+        log.info("Получение рекомендаций для пользователя userId={}, maxResults={}", userId, maxResults);
+
+        List<Long> recommendedIds = recommendationsClient.getRecommendationsForUser(userId, maxResults)
+                .map(RecommendedEventProto::getEventId)
+                .toList();
+
+        if (recommendedIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<Event> events = eventRepository.findByIdIn(recommendedIds);
+        Map<Long, Long> confirmedMap = getConfirmedRequestsMap(recommendedIds);
+        Map<Long, Double> ratingMap = getRatingMap(recommendedIds);
+
+        return events.stream()
+                .map(event -> {
+                    CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+                    UserShortDto user = getUserShort(event.getInitiatorId());
+                    Long confirmed = confirmedMap.getOrDefault(event.getId(), 0L);
+                    Double rating = ratingMap.getOrDefault(event.getId(), 0.0);
+                    return eventMapper.toShortDto(event, category, user, confirmed, rating);
+                })
+                .toList();
+    }
+
+    // ========================== Приватные вспомогательные методы ==========================
+
+    private List<EventFullDto> enrichEventFullDtos(List<Event> events) {
+        if (events.isEmpty()) return List.of();
+
+        List<Long> eventIds = events.stream().map(Event::getId).toList();
+        Map<Long, Long> confirmedMap = getConfirmedRequestsMap(eventIds);
+        Map<Long, Double> ratingMap = getRatingMap(eventIds);
+
+        return events.stream()
+                .map(event -> buildEventFullDto(event, confirmedMap, ratingMap))
+                .toList();
+    }
+
+    private EventFullDto enrichEventFullDto(Event event) {
+        Map<Long, Long> confirmedMap = getConfirmedRequestsMap(List.of(event.getId()));
+        Map<Long, Double> ratingMap = getRatingMap(List.of(event.getId()));
+        return buildEventFullDto(event, confirmedMap, ratingMap);
+    }
+
+    private EventFullDto buildEventFullDto(Event event, Map<Long, Long> confirmedMap, Map<Long, Double> ratingMap) {
+        CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+        UserShortDto user = getUserShort(event.getInitiatorId());
+        Long confirmed = confirmedMap.getOrDefault(event.getId(), 0L);
+        Double rating = ratingMap.getOrDefault(event.getId(), 0.0);
+        return eventMapper.toFullDto(event, category, user, confirmed, rating);
+    }
+
+    private List<EventShortDto> enrichEventShortDtos(List<Event> events) {
+        if (events.isEmpty()) return List.of();
+
+        List<Long> eventIds = events.stream().map(Event::getId).toList();
+        Map<Long, Long> confirmedMap = getConfirmedRequestsMap(eventIds);
+        Map<Long, Double> ratingMap = getRatingMap(eventIds);
+
+        return events.stream()
+                .map(event -> {
+                    CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+                    UserShortDto user = getUserShort(event.getInitiatorId());
+                    Long confirmed = confirmedMap.getOrDefault(event.getId(), 0L);
+                    Double rating = ratingMap.getOrDefault(event.getId(), 0.0);
+                    return eventMapper.toShortDto(event, category, user, confirmed, rating);
+                })
+                .toList();
+    }
+
+    private EventShortDto enrichEventShortDto(Event event) {
+        Map<Long, Long> confirmedMap = getConfirmedRequestsMap(List.of(event.getId()));
+        Map<Long, Double> ratingMap = getRatingMap(List.of(event.getId()));
+        CategoryDto category = categoryClient.getCategoryById(event.getCategoryId());
+        UserShortDto user = getUserShort(event.getInitiatorId());
+        Long confirmed = confirmedMap.getOrDefault(event.getId(), 0L);
+        Double rating = ratingMap.getOrDefault(event.getId(), 0.0);
+        return eventMapper.toShortDto(event, category, user, confirmed, rating);
+    }
+
+    private Map<Long, Long> getConfirmedRequestsMap(List<Long> eventIds) {
+        if (eventIds.isEmpty()) return Map.of();
+        return requestClient.countConfirmedRequestsByEventIds(eventIds);
+    }
+
+    private Map<Long, Double> getRatingMap(List<Long> eventIds) {
+        return recommendationsClient.getInteractionsCount(eventIds)
+                .collect(Collectors.toMap(RecommendedEventProto::getEventId, RecommendedEventProto::getScore));
+    }
+
+    private UserShortDto getUserShort(Long userId) {
         try {
             return userClient.getUserShortById(userId);
         } catch (Exception e) {
@@ -585,36 +438,72 @@ public class EventServiceImpl implements EventService {
         }
     }
 
-    /**
-     * Публикует событие.
-     *
-     * @param event событие для публикации
-     */
-    private void publishEvent(Event event) {
-        if (event.getState() != State.PENDING) {
-            throw new ConflictResource("Событие можно опубликовать только в статусе PENDING");
+    private Specification<Event> buildAdminSpecification(EventGetAdminParam param) {
+        Specification<Event> spec = Specification.where(null);
+
+        if (param.getUsers() != null && !param.getUsers().isEmpty()) {
+            spec = spec.and((root, q, cb) -> root.get("initiatorId").in(param.getUsers()));
         }
-        event.setState(State.PUBLISHED);
-        event.setPublishedOn(LocalDateTime.now());
+        if (param.getStates() != null && !param.getStates().isEmpty()) {
+            spec = spec.and((root, q, cb) -> root.get("state").as(String.class).in(param.getStates()));
+        }
+        if (param.getCategories() != null && !param.getCategories().isEmpty()) {
+            spec = spec.and((root, q, cb) -> root.get("categoryId").in(param.getCategories()));
+        }
+        if (param.getRangeStart() != null) {
+            spec = spec.and((root, q, cb) -> cb.greaterThanOrEqualTo(root.get("eventDate"), param.getRangeStart()));
+        }
+        if (param.getRangeEnd() != null) {
+            spec = spec.and((root, q, cb) -> cb.lessThanOrEqualTo(root.get("eventDate"), param.getRangeEnd()));
+        }
+        return spec;
     }
 
-    /**
-     * Отклоняет событие.
-     *
-     * @param event событие для отклонения
-     */
-    private void rejectEvent(Event event) {
-        if (event.getState() == State.PUBLISHED) {
-            throw new ConflictResource("Нельзя отклонить опубликованное событие");
+    private Specification<Event> buildPublicSpecification(EventGetPublicParam param) {
+        Specification<Event> spec = (root, q, cb) -> cb.equal(root.get("state"), State.PUBLISHED);
+
+        if (param.getText() != null && !param.getText().isBlank()) {
+            String pattern = "%" + param.getText().toLowerCase() + "%";
+            spec = spec.and((root, q, cb) -> cb.or(
+                    cb.like(cb.lower(root.get("annotation")), pattern),
+                    cb.like(cb.lower(root.get("description")), pattern)
+            ));
         }
-        event.setState(State.CANCELED);
+        if (param.getCategories() != null && !param.getCategories().isEmpty()) {
+            spec = spec.and((root, q, cb) -> root.get("categoryId").in(param.getCategories()));
+        }
+        if (param.getPaid() != null) {
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("paid"), param.getPaid()));
+        }
+        LocalDateTime start = param.getRangeStart() != null ? param.getRangeStart() : LocalDateTime.now();
+        spec = spec.and((root, q, cb) -> cb.greaterThanOrEqualTo(root.get("eventDate"), start));
+        if (param.getRangeEnd() != null) {
+            spec = spec.and((root, q, cb) -> cb.lessThanOrEqualTo(root.get("eventDate"), param.getRangeEnd()));
+        }
+        if (param.getOnlyAvailable() != null && param.getOnlyAvailable()) {
+            spec = spec.and((root, q, cb) -> cb.or(
+                    cb.equal(root.get("participantLimit"), 0),
+                    cb.lessThan(root.get("confirmedRequests"), root.get("participantLimit"))
+            ));
+        }
+        return spec;
     }
 
-    /**
-     * Проверяет дату события.
-     *
-     * @param eventDate дата события
-     */
+    private Sort buildSort(String sortParam) {
+        if (sortParam == null) return Sort.unsorted();
+        if (sortParam.equalsIgnoreCase(EventSort.EVENT_DATE.toString())) {
+            return Sort.by(Sort.Direction.ASC, "eventDate");
+        }
+        // Другие варианты сортировки можно добавить здесь
+        return Sort.unsorted();
+    }
+
+    private void validateRange(LocalDateTime start, LocalDateTime end) {
+        if (start != null && end != null && end.isBefore(start)) {
+            throw new BadRequestException("Дата окончания не может быть раньше даты начала");
+        }
+    }
+
     private void validateEventDate(LocalDateTime eventDate) {
         if (eventDate.isBefore(LocalDateTime.now().plusHours(MIN_HOURS_BEFORE_EVENT))) {
             throw new BadRequestException(
@@ -623,39 +512,53 @@ public class EventServiceImpl implements EventService {
         }
     }
 
-    /**
-     * Проверяет заголовок события.
-     *
-     * @param title заголовок события
-     */
-    private void validateTitle(String title) {
-        if (title.length() > MAX_TITLE_LENGTH) {
-            throw new BadRequestException(
-                    String.format("Максимальная длина заголовка - %d символов", MAX_TITLE_LENGTH));
+    private void publishEvent(Event event) {
+        if (event.getState() != State.PENDING) {
+            throw new ConflictResource("Событие можно опубликовать только в статусе PENDING");
         }
+        event.publish();
     }
 
-    /**
-     * Проверяет аннотацию события.
-     *
-     * @param annotation аннотация события
-     */
-    private void validateAnnotation(String annotation) {
-        if (annotation.length() > MAX_ANNOTATION_LENGTH) {
-            throw new BadRequestException(
-                    String.format("Максимальная длина аннотации - %d символов", MAX_ANNOTATION_LENGTH));
+    private void rejectEvent(Event event) {
+        if (event.getState() == State.PUBLISHED) {
+            throw new ConflictResource("Нельзя отклонить опубликованное событие");
         }
+        event.cancel();
     }
 
-    /**
-     * Проверяет описание события.
-     *
-     * @param description описание события
-     */
-    private void validateDescription(String description) {
-        if (description.length() > MAX_DESCRIPTION_LENGTH) {
-            throw new BadRequestException(
-                    String.format("Максимальная длина описания - %d символов", MAX_DESCRIPTION_LENGTH));
+    private void updateEventFields(Event event, UpdateEventAdminRequest request) {
+        if (request.hasAnnotation()) event.setAnnotation(request.getAnnotation());
+        if (request.hasCategory()) {
+            CategoryDto cat = categoryClient.getCategoryById(request.getCategory());
+            event.setCategoryId(cat.getId());
         }
+        if (request.hasDescription()) event.setDescription(request.getDescription());
+        if (request.hasEventDate()) {
+            validateEventDate(request.getEventDate());
+            event.setEventDate(request.getEventDate());
+        }
+        if (request.hasLocation()) event.setLocation(request.getLocation());
+        if (request.hasPaid()) event.setPaid(request.getPaid());
+        if (request.hasParticipantLimit()) event.setParticipantLimit(request.getParticipantLimit());
+        if (request.hasRequestModeration()) event.setRequestModeration(request.getRequestModeration());
+        if (request.hasTitle()) event.setTitle(request.getTitle());
+    }
+
+    private void updateEventFields(Event event, UpdateEventUserRequest request) {
+        if (request.getAnnotation() != null) event.setAnnotation(request.getAnnotation());
+        if (request.getCategory() != null) {
+            CategoryDto cat = categoryClient.getCategoryById(request.getCategory());
+            event.setCategoryId(cat.getId());
+        }
+        if (request.getDescription() != null) event.setDescription(request.getDescription());
+        if (request.getEventDate() != null) {
+            validateEventDate(request.getEventDate());
+            event.setEventDate(request.getEventDate());
+        }
+        if (request.getLocation() != null) event.setLocation(request.getLocation());
+        if (request.getPaid() != null) event.setPaid(request.getPaid());
+        if (request.getParticipantLimit() != null) event.setParticipantLimit(request.getParticipantLimit());
+        if (request.getRequestModeration() != null) event.setRequestModeration(request.getRequestModeration());
+        if (request.getTitle() != null) event.setTitle(request.getTitle());
     }
 }

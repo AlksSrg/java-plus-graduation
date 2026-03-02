@@ -1,5 +1,7 @@
 package ru.practicum.request.service;
 
+import ru.practicum.event.dto.EventRequestStatusUpdateRequest;
+import ru.practicum.event.dto.EventRequestStatusUpdateResult;
 import ru.practicum.request.dto.ParticipationRequestDto;
 import ru.practicum.request.util.Status;
 
@@ -8,11 +10,14 @@ import java.util.Map;
 
 /**
  * Сервис для работы с запросами на участие.
+ * Определяет контракт для операций с запросами пользователей на участие в событиях.
  */
 public interface RequestService {
 
+    // ========== Методы для пользователей ==========
+
     /**
-     * Получает все запросы пользователя.
+     * Получает все запросы указанного пользователя.
      *
      * @param userId идентификатор пользователя
      * @return список запросов
@@ -20,7 +25,7 @@ public interface RequestService {
     List<ParticipationRequestDto> getRequestsByUserId(Long userId);
 
     /**
-     * Создает новый запрос на участие в событии.
+     * Создаёт новый запрос на участие в событии.
      *
      * @param userId  идентификатор пользователя
      * @param eventId идентификатор события
@@ -33,14 +38,14 @@ public interface RequestService {
      *
      * @param userId    идентификатор пользователя
      * @param requestId идентификатор запроса
-     * @return отмененный запрос
+     * @return отменённый запрос
      */
     ParticipationRequestDto cancelRequest(Long userId, Long requestId);
 
-    // ========== Методы для межсервисного взаимодействия ==========
+    // ========== Методы для внутреннего взаимодействия (Feign-клиенты) ==========
 
     /**
-     * Получает запросы по идентификатору события.
+     * Получает все запросы для указанного события.
      *
      * @param eventId идентификатор события
      * @return список запросов
@@ -48,7 +53,7 @@ public interface RequestService {
     List<ParticipationRequestDto> getRequestsByEventId(long eventId);
 
     /**
-     * Получает запросы по списку идентификаторов.
+     * Получает запросы по списку их идентификаторов.
      *
      * @param ids список идентификаторов запросов
      * @return список запросов
@@ -56,27 +61,37 @@ public interface RequestService {
     List<ParticipationRequestDto> getRequestsByIds(List<Long> ids);
 
     /**
-     * Получает количество подтвержденных запросов для события.
+     * Подсчитывает количество подтверждённых запросов для события.
      *
      * @param eventId идентификатор события
-     * @return количество подтвержденных запросов
+     * @return количество подтверждённых запросов
      */
     Long countConfirmedRequestsByEventId(long eventId);
 
     /**
-     * Получает количество подтвержденных запросов для списка событий.
+     * Подсчитывает количество подтверждённых запросов для списка событий.
      *
      * @param eventIds список идентификаторов событий
-     * @return карта eventId -> количество подтвержденных запросов
+     * @return карта, где ключ — идентификатор события, значение — количество подтверждённых запросов
      */
     Map<Long, Long> countConfirmedRequestsByEventIds(List<Long> eventIds);
 
     /**
-     * Обновляет статус запроса.
+     * Обновляет статус одного запроса.
      *
      * @param requestId идентификатор запроса
      * @param status    новый статус
-     * @return обновленный запрос
+     * @return обновлённый запрос
      */
     ParticipationRequestDto updateRequestStatus(long requestId, Status status);
+
+    /**
+     * Массовое обновление статусов запросов (используется владельцем события).
+     *
+     * @param userId  идентификатор владельца события
+     * @param eventId идентификатор события
+     * @param request данные для обновления (список идентификаторов запросов и новый статус)
+     * @return результат обновления: списки подтверждённых и отклонённых запросов
+     */
+    EventRequestStatusUpdateResult updateRequestsStatus(Long userId, Long eventId, EventRequestStatusUpdateRequest request);
 }

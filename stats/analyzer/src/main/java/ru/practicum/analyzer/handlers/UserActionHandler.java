@@ -13,7 +13,7 @@ import ru.practicum.ewm.stats.avro.UserActionAvro;
 import java.util.Optional;
 
 /**
- * Обработчик действий пользователей.
+ * Обработчик действий пользователей, сохраняет или обновляет их в БД.
  */
 @Slf4j
 @Service
@@ -21,54 +21,49 @@ import java.util.Optional;
 public class UserActionHandler {
 
     private final UserActionRepository userActionRepository;
-    private final ActionWeightService actionWeightService;
+    private final ActionWeightService weightService;
 
     /**
-     * Обрабатывает и сохраняет действие пользователя.
+     * Обрабатывает полученное действие пользователя.
      *
-     * @param userActionAvro объект с действием пользователя
+     * @param avro действие в формате Avro
      */
     @Transactional
-    public void handle(UserActionAvro userActionAvro) {
+    public void handle(UserActionAvro avro) {
         log.info("Обработка действия: userId={}, eventId={}, action={}",
-                userActionAvro.getUserId(), userActionAvro.getEventId(), userActionAvro.getActionType());
+                avro.getUserId(), avro.getEventId(), avro.getActionType());
 
         Optional<UserAction> existing = userActionRepository.findByUserIdAndEventId(
-                userActionAvro.getUserId(), userActionAvro.getEventId());
+                avro.getUserId(), avro.getEventId());
 
         if (existing.isPresent()) {
-            updateExistingAction(existing.get(), userActionAvro);
+            updateIfWeightHigher(existing.get(), avro);
         } else {
-            createNewAction(userActionAvro);
+            createNew(avro);
         }
     }
 
-    /**
-     * Обновляет существующее действие.
-     */
-    private void updateExistingAction(UserAction existing, UserActionAvro avro) {
-        Double currentWeight = actionWeightService.getWeight(existing.getActionType());
-        Double newWeight = actionWeightService.getWeight(ActionType.valueOf(avro.getActionType().name()));
+    private void updateIfWeightHigher(UserAction action, UserActionAvro avro) {
+        double currentWeight = weightService.getWeight(action.getActionType());
+        double newWeight = weightService.getWeight(ActionType.valueOf(avro.getActionType().name()));
 
         if (newWeight > currentWeight) {
-            existing.setActionType(ActionType.valueOf(avro.getActionType().name()));
-            existing.setTimestamp(avro.getTimestamp());
-            userActionRepository.save(existing);
-            log.info("Действие обновлено");
+            action.setActionType(ActionType.valueOf(avro.getActionType().name()));
+            action.setTimestamp(avro.getTimestamp());
+            userActionRepository.save(action);
+            log.info("Действие обновлено (вес увеличен)");
+        } else {
+            log.debug("Пропуск обновления: новый вес {} <= текущего {}", newWeight, currentWeight);
         }
     }
 
-    /**
-     * Создает новое действие.
-     */
-    private void createNewAction(UserActionAvro avro) {
+    private void createNew(UserActionAvro avro) {
         UserAction action = UserAction.builder()
                 .userId(avro.getUserId())
                 .eventId(avro.getEventId())
                 .actionType(ActionType.valueOf(avro.getActionType().name()))
                 .timestamp(avro.getTimestamp())
                 .build();
-
         userActionRepository.save(action);
         log.info("Новое действие сохранено");
     }

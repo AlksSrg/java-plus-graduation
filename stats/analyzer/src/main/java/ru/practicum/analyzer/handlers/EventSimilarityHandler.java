@@ -16,16 +16,16 @@ import ru.practicum.ewm.stats.avro.EventSimilarityAvro;
 @RequiredArgsConstructor
 public class EventSimilarityHandler {
 
-    private final EventSimilarityRepository eventSimilarityRepository;
+    private final EventSimilarityRepository repository;
 
     /**
-     * Обрабатывает и сохраняет данные о схожести.
+     * Сохраняет информацию о схожести двух мероприятий.
      *
-     * @param avro объект с данными о схожести
+     * @param avro объект схожести в формате Avro
      */
     @Transactional
     public void handle(EventSimilarityAvro avro) {
-        log.info("Обработка схожести: eventA={}, eventB={}, score={}",
+        log.info("Сохранение схожести: eventA={}, eventB={}, score={}",
                 avro.getEventA(), avro.getEventB(), avro.getScore());
 
         EventSimilarity similarity = EventSimilarity.builder()
@@ -35,7 +35,7 @@ public class EventSimilarityHandler {
                 .timestamp(avro.getTimestamp())
                 .build();
 
-        eventSimilarityRepository.save(similarity);
+        repository.save(similarity);
         log.info("Схожесть сохранена");
     }
 }

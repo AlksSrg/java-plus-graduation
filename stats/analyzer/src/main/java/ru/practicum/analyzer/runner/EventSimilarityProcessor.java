@@ -16,7 +16,7 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Процессор для обработки сообщений о схожести мероприятий.
+ * Процессор, непрерывно читающий топик схожести мероприятий и передающий их обработчику.
  */
 @Slf4j
 @Component
@@ -24,21 +24,18 @@ import java.util.List;
 public class EventSimilarityProcessor implements Runnable {
 
     private final EventSimilarityConsumerService consumer;
-    private final EventSimilarityHandler eventSimilarityHandler;
+    private final EventSimilarityHandler handler;
 
     @Value("${kafka.topics.event-similarity:telemetry.similarity.v1}")
     private String topic;
 
     private volatile boolean running = true;
 
-    /**
-     * Запускает процессор.
-     */
     @Override
     public void run() {
         setupShutdownHook();
         consumer.subscribe(List.of(topic));
-        log.info("Запуск процессора схожести, топик: {}", topic);
+        log.info("Запуск процессора схожести мероприятий, топик: {}", topic);
 
         try {
             while (running) {
@@ -46,31 +43,26 @@ public class EventSimilarityProcessor implements Runnable {
 
                 if (!records.isEmpty()) {
                     log.info("Получено {} записей", records.count());
-
                     for (ConsumerRecord<Long, SpecificRecordBase> record : records) {
                         try {
                             EventSimilarityAvro avro = (EventSimilarityAvro) record.value();
-                            eventSimilarityHandler.handle(avro);
+                            handler.handle(avro);
                         } catch (Exception e) {
                             log.error("Ошибка обработки записи offset={}", record.offset(), e);
                         }
                     }
-
                     consumer.commitAsync();
                 }
             }
         } catch (WakeupException e) {
-            log.info("WakeupException при остановке");
+            log.info("WakeupException при остановке процессора схожести");
         } catch (Exception e) {
-            log.error("Ошибка в процессоре", e);
+            log.error("Ошибка в процессоре схожести", e);
         } finally {
             consumer.close();
         }
     }
 
-    /**
-     * Настраивает хук завершения.
-     */
     private void setupShutdownHook() {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             running = false;

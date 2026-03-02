@@ -6,7 +6,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import ru.practicum.analyzer.service.AnalyzerService;
-import ru.practicum.ewm.stats.proto.*;
+import ru.practicum.grpc.stats.RecommendationsControllerGrpc;
+import ru.practicum.grpc.stats.recommendation.InteractionsCountRequestProto;
+import ru.practicum.grpc.stats.recommendation.RecommendedEventProto;
+import ru.practicum.grpc.stats.recommendation.SimilarEventsRequestProto;
+import ru.practicum.grpc.stats.recommendation.UserPredictionsRequestProto;
 
 /**
  * gRPC контроллер для обработки запросов рекомендаций.
@@ -18,14 +22,8 @@ public class AnalyzerController extends RecommendationsControllerGrpc.Recommenda
 
     private final AnalyzerService analyzerService;
 
-    /**
-     * Возвращает персональные рекомендации для пользователя.
-     *
-     * @param request          запрос с ID пользователя
-     * @param responseObserver наблюдатель ответа
-     */
     @Override
-    public void getRecommendationsForUser(UserRecommendationsRequestProto request,
+    public void getRecommendationsForUser(UserPredictionsRequestProto request,
                                           StreamObserver<RecommendedEventProto> responseObserver) {
         log.info("Запрос рекомендаций для пользователя: {}", request.getUserId());
         try {
@@ -40,12 +38,6 @@ public class AnalyzerController extends RecommendationsControllerGrpc.Recommenda
         }
     }
 
-    /**
-     * Возвращает похожие мероприятия.
-     *
-     * @param request          запрос с ID мероприятия
-     * @param responseObserver наблюдатель ответа
-     */
     @Override
     public void getSimilarEvents(SimilarEventsRequestProto request,
                                  StreamObserver<RecommendedEventProto> responseObserver) {
@@ -62,12 +54,6 @@ public class AnalyzerController extends RecommendationsControllerGrpc.Recommenda
         }
     }
 
-    /**
-     * Возвращает статистику взаимодействий.
-     *
-     * @param request          запрос со списком мероприятий
-     * @param responseObserver наблюдатель ответа
-     */
     @Override
     public void getInteractionsCount(InteractionsCountRequestProto request,
                                      StreamObserver<RecommendedEventProto> responseObserver) {

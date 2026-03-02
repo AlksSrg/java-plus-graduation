@@ -35,8 +35,6 @@
         <grpc-client.version>3.1.0.RELEASE</grpc-client.version>
         <avro-schemas.version>0.0.1-SNAPSHOT</avro-schemas.version>
         <proto-schemas.version>0.0.1-SNAPSHOT</proto-schemas.version>
-        <serializer.version>0.0.1-SNAPSHOT</serializer.version>
-        <deserializer.version>0.0.1-SNAPSHOT</deserializer.version>
     </properties>
 
     <dependencyManagement>
@@ -90,16 +88,6 @@
                 <groupId>ru.practicum</groupId>
                 <artifactId>proto-schemas</artifactId>
                 <version>${proto-schemas.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>ru.practicum</groupId>
-                <artifactId>serializer</artifactId>
-                <version>${serializer.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>ru.practicum</groupId>
-                <artifactId>deserializer</artifactId>
-                <version>${deserializer.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

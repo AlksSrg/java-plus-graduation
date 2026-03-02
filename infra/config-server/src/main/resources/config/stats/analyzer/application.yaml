@@ -1,3 +1,6 @@
+server:
+  port: 0
+
 spring:
   datasource:
     driver-class-name: org.postgresql.Driver
@@ -48,3 +51,7 @@ grpc:
       enable-keep-alive: true
       keep-alive-without-calls: true
       negotiation-type: plaintext
+
+logging:
+  level:
+    ru.practicum: DEBUG

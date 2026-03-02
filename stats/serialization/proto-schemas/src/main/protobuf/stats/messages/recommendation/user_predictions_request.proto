@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package stats.messages.recommendation;
+
+option java_multiple_files = true;
+option java_package = "ru.practicum.grpc.stats.recommendation";
+
+/**
+ * Запрос персональных рекомендаций для пользователя.
+ */
+message UserPredictionsRequestProto {
+  int64 user_id = 1;        // Идентификатор пользователя
+  int32 max_results = 2;     // Максимальное количество рекомендаций
+}

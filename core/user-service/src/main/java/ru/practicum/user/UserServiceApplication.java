@@ -2,6 +2,7 @@ package ru.practicum.user;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.ComponentScan;
@@ -15,6 +16,7 @@ import org.springframework.context.annotation.ComponentScan;
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "ru.practicum.feignclients")
 @ComponentScan(basePackages = {"ru.practicum.user", "ru.practicum.exception.handler", "ru.practicum.handler"})
+@ConfigurationPropertiesScan
 public class UserServiceApplication {
 
     /**

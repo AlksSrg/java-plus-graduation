@@ -87,7 +87,7 @@ spring:
                 fallbackUri: forward:/fallback/events
           order: 2
 
-        # Маршруты для request-service (заявки на участие)
+        # Маршруты для request-service
         - id: request-service-private
           uri: lb://request-service
           predicates:

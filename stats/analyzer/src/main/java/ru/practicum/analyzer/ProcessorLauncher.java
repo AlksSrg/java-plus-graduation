@@ -1,5 +1,6 @@
 package ru.practicum.analyzer;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
@@ -7,42 +8,26 @@ import ru.practicum.analyzer.runner.EventSimilarityProcessor;
 import ru.practicum.analyzer.runner.UserActionProcessor;
 
 /**
- * Запускает обработчики Kafka сообщений.
+ * Компонент, запускающий Kafka‑процессоры в отдельных потоках после старта приложения.
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class ProcessorLauncher implements CommandLineRunner {
 
     private final UserActionProcessor userActionProcessor;
     private final EventSimilarityProcessor eventSimilarityProcessor;
 
-    /**
-     * Конструктор.
-     *
-     * @param userActionProcessor      процессор действий
-     * @param eventSimilarityProcessor процессор схожести
-     */
-    public ProcessorLauncher(UserActionProcessor userActionProcessor,
-                             EventSimilarityProcessor eventSimilarityProcessor) {
-        this.userActionProcessor = userActionProcessor;
-        this.eventSimilarityProcessor = eventSimilarityProcessor;
-    }
-
-    /**
-     * Запускает процессоры в отдельных потоках.
-     *
-     * @param args аргументы командной строки
-     */
     @Override
     public void run(String... args) {
         log.info("Запуск Kafka процессоров...");
 
         Thread userThread = new Thread(userActionProcessor, "UserActionProcessor");
-        userThread.setDaemon(false);
+        userThread.setDaemon(true);
         userThread.start();
 
         Thread similarityThread = new Thread(eventSimilarityProcessor, "EventSimilarityProcessor");
-        similarityThread.setDaemon(false);
+        similarityThread.setDaemon(true);
         similarityThread.start();
 
         log.info("Процессоры запущены");

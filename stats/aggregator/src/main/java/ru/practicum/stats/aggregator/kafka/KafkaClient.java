@@ -7,21 +7,26 @@ import ru.practicum.ewm.stats.avro.UserActionAvro;
 
 /**
  * Интерфейс Kafka клиента.
+ * Предоставляет доступ к продюсеру и консьюмеру.
  */
 public interface KafkaClient {
 
     /**
-     * Возвращает продюсер для отправки схожести.
+     * Возвращает продюсер для отправки сообщений о схожести.
+     *
+     * @return продюсер
      */
     Producer<String, EventSimilarityAvro> getProducer();
 
     /**
-     * Возвращает консьюмер для чтения действий.
+     * Возвращает консьюмер для чтения действий пользователей.
+     *
+     * @return консьюмер
      */
     Consumer<String, UserActionAvro> getConsumer();
 
     /**
-     * Останавливает клиент.
+     * Останавливает клиент и закрывает все ресурсы.
      */
     void stop();
 }

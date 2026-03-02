@@ -101,9 +101,9 @@ public interface EventService {
     /**
      * Обновляет статусы запросов на участие в событии.
      *
-     * @param userId      идентификатор пользователя
-     * @param eventId     идентификатор события
-     * @param request     данные для обновления статусов
+     * @param userId  идентификатор пользователя
+     * @param eventId идентификатор события
+     * @param request данные для обновления статусов
      * @return результат обновления статусов
      */
     EventRequestStatusUpdateResult updateRequestStatus(Long userId, Long eventId,
@@ -157,4 +157,21 @@ public interface EventService {
      * @return true если пользователь участвовал в событии
      */
     boolean hasUserParticipated(Long userId, Long eventId);
+
+    /**
+     * Добавляет лайк событию от пользователя.
+     *
+     * @param userId  идентификатор пользователя
+     * @param eventId идентификатор события
+     */
+    void addLike(Long userId, Long eventId);
+
+    /**
+     * Получает рекомендации событий для пользователя.
+     *
+     * @param userId     идентификатор пользователя
+     * @param maxResults максимальное количество рекомендаций
+     * @return список кратких DTO событий
+     */
+    List<EventShortDto> getRecommendations(Long userId, int maxResults);
 }

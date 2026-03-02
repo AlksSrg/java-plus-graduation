@@ -4,6 +4,7 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
+import ru.practicum.config.FeignConfiguration;
 import ru.practicum.event.dto.EventFullDto;
 import ru.practicum.event.dto.EventShortDto;
 
@@ -13,13 +14,11 @@ import java.util.List;
  * Feign-клиент для взаимодействия с event-service.
  * Предоставляет методы для получения информации о событиях.
  */
-@FeignClient(name = "event-service")
+@FeignClient(name = "event-service", configuration = FeignConfiguration.class)
 public interface EventClient {
 
     /**
-     * Получает полную информацию о событии по его идентификатору.
-     * Используется для внутренних вызовов между микросервисами.
-     * В отличие от публичного эндпоинта, этот метод не проверяет статус PUBLISHED.
+     * Получает полную информацию о событии по его идентификатору (внутренний вызов).
      *
      * @param eventId идентификатор события
      * @return полное DTO события
@@ -29,7 +28,6 @@ public interface EventClient {
 
     /**
      * Получает краткую информацию о событии по его идентификатору.
-     * Используется для отображения в списках и комментариях.
      *
      * @param eventId идентификатор события
      * @return краткое DTO события
@@ -47,10 +45,10 @@ public interface EventClient {
     List<EventShortDto> getEventsByIds(@RequestParam("ids") List<Long> eventIds);
 
     /**
-     * Проверяет существование события по его идентификатору.
+     * Проверяет существование события по идентификатору.
      *
      * @param eventId идентификатор события
-     * @return true если событие существует
+     * @return true, если событие существует
      */
     @GetMapping("/events/{eventId}/exists")
     Boolean existsEventById(@PathVariable("eventId") Long eventId);
@@ -59,7 +57,7 @@ public interface EventClient {
      * Проверяет, существуют ли события с указанной категорией.
      *
      * @param categoryId идентификатор категории
-     * @return true если есть события с данной категорией
+     * @return true, если есть хотя бы одно событие с данной категорией
      */
     @GetMapping("/events/by-category/{categoryId}/exists")
     Boolean existsByCategoryId(@PathVariable("categoryId") Long categoryId);

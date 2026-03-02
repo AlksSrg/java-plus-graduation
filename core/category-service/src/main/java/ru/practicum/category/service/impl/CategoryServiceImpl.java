@@ -17,6 +17,7 @@ import ru.practicum.exception.NotFoundResource;
 import ru.practicum.feignclients.client.EventClient;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Реализация сервиса для работы с категориями.
@@ -28,26 +29,31 @@ import java.util.List;
 public class CategoryServiceImpl implements CategoryService {
 
     private final CategoryRepository categoryRepository;
+    private final CategoryMapper categoryMapper;
     private final EventClient eventClient;
 
     @Override
     public List<CategoryDto> getAll(int from, int size) {
-        log.info("Getting all categories with from={}, size={}", from, size);
+        log.info("Запрос всех категорий: from={}, size={}", from, size);
         Pageable pageable = PageRequest.of(from / size, size);
         return categoryRepository.findAll(pageable).stream()
-                .map(CategoryMapper::toDto)
+                .map(categoryMapper::toDto)
                 .toList();
     }
 
     @Override
     public CategoryDto get(long catId) {
-        log.info("Getting category with id: {}", catId);
-        Category category = getCategoryById(catId);
-        return CategoryMapper.toDto(category);
+        log.info("Запрос категории по id: {}", catId);
+        Category category = getCategoryEntityById(catId);
+        return categoryMapper.toDto(category);
     }
 
     @Override
     public Category getCategoryById(long catId) {
+        return getCategoryEntityById(catId);
+    }
+
+    private Category getCategoryEntityById(long catId) {
         return categoryRepository.findById(catId)
                 .orElseThrow(() -> new NotFoundResource("Категория", catId));
     }
@@ -55,54 +61,42 @@ public class CategoryServiceImpl implements CategoryService {
     @Override
     @Transactional
     public CategoryDto create(NewCategoryDto categoryDto) {
-        log.info("Creating new category: {}", categoryDto);
+        log.info("Создание новой категории: {}", categoryDto);
 
-        categoryRepository.findByNameContainingIgnoreCase(categoryDto.getName())
-                .ifPresent(category -> {
-                    throw ConflictResource.ofValue(
-                            "Категория '" + categoryDto.getName() + "' уже существует",
-                            categoryDto.getName()
-                    );
-                });
+        checkNameUnique(categoryDto.getName(), null);
 
-        Category category = CategoryMapper.toEntity(categoryDto);
-        Category savedCategory = categoryRepository.save(category);
-        log.info("Created category with id: {}", savedCategory.getId());
+        Category category = categoryMapper.toEntity(categoryDto);
+        Category saved = categoryRepository.save(category);
+        log.info("Создана категория с id: {}", saved.getId());
 
-        return CategoryMapper.toDto(savedCategory);
+        return categoryMapper.toDto(saved);
     }
 
     @Override
     @Transactional
     public CategoryDto update(CategoryDto categoryDto) {
-        log.info("Updating category with id: {}, data: {}", categoryDto.getId(), categoryDto);
+        log.info("Обновление категории id={}, данные: {}", categoryDto.getId(), categoryDto);
 
-        Category existingCategory = getCategoryById(categoryDto.getId());
+        Category existing = getCategoryEntityById(categoryDto.getId());
+        checkNameUnique(categoryDto.getName(), categoryDto.getId());
 
-        categoryRepository.findByNameContainingIgnoreCaseAndIdNotIn(
-                        categoryDto.getName(), List.of(categoryDto.getId()))
-                .ifPresent(category -> {
-                    throw ConflictResource.ofValue(
-                            "Категория '" + categoryDto.getName() + "' уже существует",
-                            categoryDto.getName()
-                    );
-                });
+        // Преобразуем CategoryDto в NewCategoryDto для маппера обновления
+        NewCategoryDto newCategoryDto = new NewCategoryDto(categoryDto.getName());
+        categoryMapper.updateEntityFromDto(newCategoryDto, existing);
 
-        Category updatedCategory = CategoryMapper.updateEntity(categoryDto, existingCategory);
-        updatedCategory = categoryRepository.save(updatedCategory);
-        log.info("Updated category with id: {}", updatedCategory.getId());
+        Category updated = categoryRepository.save(existing);
+        log.info("Обновлена категория с id: {}", updated.getId());
 
-        return CategoryMapper.toDto(updatedCategory);
+        return categoryMapper.toDto(updated);
     }
 
     @Override
     @Transactional
     public void delete(long catId) {
-        log.info("Deleting category with id: {}", catId);
+        log.info("Удаление категории id={}", catId);
 
-        Category category = getCategoryById(catId);
+        Category category = getCategoryEntityById(catId);
 
-        // Проверка через Feign-клиент, есть ли события с этой категорией
         boolean hasEvents = eventClient.existsByCategoryId(catId);
         if (hasEvents) {
             throw ConflictResource.ofReason(
@@ -112,6 +106,26 @@ public class CategoryServiceImpl implements CategoryService {
         }
 
         categoryRepository.deleteById(catId);
-        log.info("Deleted category with id: {}", catId);
+        log.info("Удалена категория с id: {}", catId);
+    }
+
+    /**
+     * Проверяет уникальность имени категории.
+     *
+     * @param name       проверяемое имя
+     * @param excludedId идентификатор категории, исключаемый из проверки (при обновлении)
+     * @throws ConflictResource если имя уже занято
+     */
+    private void checkNameUnique(String name, Long excludedId) {
+        Optional<Category> existing = (excludedId == null)
+                ? categoryRepository.findByNameIgnoreCase(name)
+                : categoryRepository.findByNameIgnoreCaseAndIdNot(name, excludedId);
+
+        existing.ifPresent(c -> {
+            throw ConflictResource.ofValue(
+                    "Категория с именем '" + name + "' уже существует",
+                    name
+            );
+        });
     }
 }

@@ -8,13 +8,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.analyzer.model.EventSimilarity;
 import ru.practicum.analyzer.repository.EventSimilarityRepository;
-import ru.practicum.ewm.stats.proto.RecommendedEventProto;
+import ru.practicum.grpc.stats.recommendation.RecommendedEventProto;
 
 import java.util.List;
 import java.util.Set;
 
 /**
- * Сервис для работы со схожестью мероприятий.
+ * Сервис для работы со схожестью мероприятий (чтение из БД).
  */
 @Slf4j
 @Service
@@ -22,64 +22,32 @@ import java.util.Set;
 @Transactional(readOnly = true)
 public class EventSimilarityService {
 
-    private final EventSimilarityRepository similarityRepository;
+    private final EventSimilarityRepository repository;
     private final UserActionService userActionService;
 
-    /**
-     * Находит похожие по eventA.
-     *
-     * @param eventId ID мероприятия
-     * @param limit   лимит
-     * @return список записей схожести
-     */
     public List<EventSimilarity> findSimilarByEventA(Long eventId, int limit) {
         PageRequest page = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "score"));
-        return similarityRepository.findAllByEventA(eventId, page);
+        return repository.findAllByEventA(eventId, page);
     }
 
-    /**
-     * Находит похожие по eventB.
-     *
-     * @param eventId ID мероприятия
-     * @param limit   лимит
-     * @return список записей схожести
-     */
     public List<EventSimilarity> findSimilarByEventB(Long eventId, int limit) {
         PageRequest page = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "score"));
-        return similarityRepository.findAllByEventB(eventId, page);
+        return repository.findAllByEventB(eventId, page);
     }
 
-    /**
-     * Находит похожие по набору eventA.
-     *
-     * @param eventIds набор ID
-     * @param limit    лимит
-     * @return список записей схожести
-     */
     public List<EventSimilarity> findSimilarByEventAIn(Set<Long> eventIds, int limit) {
         PageRequest page = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "score"));
-        return similarityRepository.findAllByEventAIn(eventIds, page);
+        return repository.findAllByEventAIn(eventIds, page);
     }
 
-    /**
-     * Находит похожие по набору eventB.
-     *
-     * @param eventIds набор ID
-     * @param limit    лимит
-     * @return список записей схожести
-     */
     public List<EventSimilarity> findSimilarByEventBIn(Set<Long> eventIds, int limit) {
         PageRequest page = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "score"));
-        return similarityRepository.findAllByEventBIn(eventIds, page);
+        return repository.findAllByEventBIn(eventIds, page);
     }
 
     /**
-     * Фильтрует и добавляет рекомендации.
-     *
-     * @param recommendations список для добавления
-     * @param similarities    записи схожести
-     * @param isEventB        флаг поиска по eventB
-     * @param userId          ID пользователя
+     * Фильтрует похожие события, исключая те, с которыми пользователь уже взаимодействовал,
+     * и добавляет их в список рекомендаций.
      */
     public void filterAndAddRecommendations(
             List<RecommendedEventProto> recommendations,
@@ -94,7 +62,7 @@ public class EventSimilarityService {
                         .setEventId(candidateId)
                         .setScore(es.getScore())
                         .build());
-                log.debug("Добавлен кандидат: {}, score: {}", candidateId, es.getScore());
+                log.debug("Добавлен кандидат: {}, score={}", candidateId, es.getScore());
             }
         }
     }

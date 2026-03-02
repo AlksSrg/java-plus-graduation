@@ -4,6 +4,7 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
+import ru.practicum.config.FeignConfiguration;
 import ru.practicum.user.dto.UserDto;
 import ru.practicum.user.dto.UserShortDto;
 
@@ -13,11 +14,11 @@ import java.util.List;
  * Feign-клиент для взаимодействия с user-service.
  * Предоставляет методы для получения информации о пользователях.
  */
-@FeignClient(name = "user-service", path = "/admin/users")
+@FeignClient(name = "user-service", path = "/admin/users", configuration = FeignConfiguration.class)
 public interface UserClient {
 
     /**
-     * Получает пользователя по идентификатору.
+     * Получает полную информацию о пользователе по идентификатору.
      *
      * @param userId идентификатор пользователя
      * @return DTO пользователя

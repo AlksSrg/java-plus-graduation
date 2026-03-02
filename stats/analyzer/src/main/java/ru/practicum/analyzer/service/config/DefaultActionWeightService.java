@@ -17,9 +17,6 @@ public class DefaultActionWeightService implements ActionWeightService {
             ActionType.LIKE, 1.0
     );
 
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public double getWeight(ActionType actionType) {
         return WEIGHTS.getOrDefault(actionType, 0.0);

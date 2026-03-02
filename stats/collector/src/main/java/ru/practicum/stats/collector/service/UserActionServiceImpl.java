@@ -1,89 +1,93 @@
 package ru.practicum.stats.collector.service;
 
-import com.google.protobuf.Empty;
-import io.grpc.stub.StreamObserver;
 import jakarta.annotation.PreDestroy;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.specific.SpecificRecordBase;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.stereotype.Service;
+import ru.practicum.ewm.stats.avro.ActionTypeAvro;
 import ru.practicum.ewm.stats.avro.UserActionAvro;
-import ru.practicum.ewm.stats.proto.UserActionProto;
+
+import ru.practicum.grpc.stats.action.ActionTypeProto;
+import ru.practicum.grpc.stats.action.UserActionProto;
 import ru.practicum.stats.collector.config.CollectorConfig;
 import ru.practicum.stats.collector.kafka.KafkaClient;
 
 import java.time.Instant;
 
-import static ru.practicum.ewm.stats.avro.ActionTypeAvro.*;
-
+/**
+ * Реализация сервиса обработки действий пользователей.
+ * Преобразует Protobuf-сообщение в Avro и отправляет в Kafka.
+ */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class UserActionServiceImpl implements UserActionService {
 
-    private final String topic;
-    private final Producer<Long, SpecificRecordBase> producer;
     private final KafkaClient kafkaClient;
-
-    public UserActionServiceImpl(KafkaClient kafkaClient,
-                                 CollectorConfig config) {
-        this.topic = config.getTopic().getUserActions();
-        this.producer = kafkaClient.getProducer();
-        this.kafkaClient = kafkaClient;
-
-        log.info("UserActionServiceImpl инициализирован. Топик: {}", topic);
-    }
+    private final CollectorConfig config;
 
     @Override
-    public void collectUserAction(UserActionProto request, StreamObserver<Empty> responseObserver) {
-        try {
-            log.info("Получен запрос: userId={}, eventId={}, actionType={}",
-                    request.getUserId(), request.getEventId(), request.getActionType());
-
-            // Отправляем в Kafka
-            sendMessage(request);
-
-            // Возвращаем ответ клиенту
-            responseObserver.onNext(Empty.getDefaultInstance());
-            responseObserver.onCompleted();
-
-            log.debug("Запрос успешно обработан");
-        } catch (Exception e) {
-            log.error("Ошибка при обработке запроса: {}", e.getMessage(), e);
-            responseObserver.onError(e);
-        }
-    }
-
-    private void sendMessage(UserActionProto request) {
+    public void collectUserAction(UserActionProto request) {
         log.debug("Преобразование сообщения в Avro формат");
 
-        UserActionAvro actionAvro = UserActionAvro.newBuilder()
-                .setUserId(request.getUserId())
-                .setEventId(request.getEventId())
-                .setActionType(switch (request.getActionType()) {
-                    case ACTION_VIEW -> VIEW;
-                    case ACTION_REGISTER -> REGISTER;
-                    case ACTION_LIKE -> LIKE;
-                    case UNRECOGNIZED -> {
-                        log.warn("Получен неизвестный тип действия: {}", request.getActionType());
-                        yield null;
-                    }
-                })
-                .setTimestamp(Instant.ofEpochSecond(
-                        request.getTimestamp().getSeconds(),
-                        request.getTimestamp().getNanos()))
-                .build();
-
-        if (actionAvro.getActionType() == null) {
-            log.error("Не удалось определить тип действия, сообщение не будет отправлено");
-            return;
+        UserActionAvro avro = buildUserActionAvro(request);
+        if (avro == null) {
+            log.error("Не удалось создать Avro-сообщение из-за неизвестного типа действия");
+            throw new IllegalArgumentException("Unsupported action type: " + request.getActionType());
         }
 
-        log.info("Отправка в Kafka: топик={}, userId={}, eventId={}, actionType={}",
-                topic, actionAvro.getUserId(), actionAvro.getEventId(), actionAvro.getActionType());
+        sendToKafka(avro);
+    }
 
-        ProducerRecord<Long, SpecificRecordBase> record =
-                new ProducerRecord<>(topic, actionAvro.getEventId(), actionAvro);
+    /**
+     * Преобразует Protobuf-сообщение в Avro.
+     */
+    private UserActionAvro buildUserActionAvro(UserActionProto request) {
+        ActionTypeProto protoType = request.getActionType();
+        if (protoType == null) {
+            throw new IllegalArgumentException("Action type cannot be null");
+        }
+
+        ActionTypeAvro avroType = switch (protoType) {
+            case ACTION_VIEW -> ActionTypeAvro.VIEW;
+            case ACTION_REGISTER -> ActionTypeAvro.REGISTER;
+            case ACTION_LIKE -> ActionTypeAvro.LIKE;
+            default -> null;
+        };
+
+        if (avroType == null) {
+            return null;
+        }
+
+        Instant timestamp = Instant.ofEpochSecond(
+                request.getTimestamp().getSeconds(),
+                request.getTimestamp().getNanos()
+        );
+
+        return UserActionAvro.newBuilder()
+                .setUserId(request.getUserId())
+                .setEventId(request.getEventId())
+                .setActionType(avroType)
+                .setTimestamp(timestamp)
+                .build();
+    }
+
+    /**
+     * Отправляет Avro-сообщение в Kafka.
+     */
+    private void sendToKafka(UserActionAvro avro) {
+        Producer<Long, SpecificRecordBase> producer = kafkaClient.getProducer();
+        String topic = config.getTopic().getUserActions();
+
+        log.info("Отправка в Kafka: топик={}, userId={}, eventId={}, actionType={}",
+                topic, avro.getUserId(), avro.getEventId(), avro.getActionType());
+
+        ProducerRecord<Long, SpecificRecordBase> record = new ProducerRecord<>(
+                topic, avro.getEventId(), avro
+        );
 
         producer.send(record, (metadata, exception) -> {
             if (exception != null) {

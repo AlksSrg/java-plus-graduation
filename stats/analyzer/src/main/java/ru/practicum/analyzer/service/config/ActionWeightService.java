@@ -3,15 +3,15 @@ package ru.practicum.analyzer.service.config;
 import ru.practicum.analyzer.enums.ActionType;
 
 /**
- * Интерфейс сервиса весов действий.
+ * Сервис для получения веса действия пользователя.
  */
 public interface ActionWeightService {
 
     /**
-     * Возвращает вес действия.
+     * Возвращает числовой вес для указанного типа действия.
      *
      * @param actionType тип действия
-     * @return числовой вес
+     * @return вес (0.0, если тип не поддерживается)
      */
     double getWeight(ActionType actionType);
 }

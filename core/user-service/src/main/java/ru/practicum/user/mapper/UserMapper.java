@@ -1,70 +1,40 @@
 package ru.practicum.user.mapper;
 
-import lombok.experimental.UtilityClass;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import ru.practicum.user.dto.NewUserRequest;
 import ru.practicum.user.dto.UserDto;
 import ru.practicum.user.dto.UserShortDto;
 import ru.practicum.user.model.User;
 
 /**
- * Утилитарный класс для преобразования между сущностью User и DTO.
- * <p>
- * Предоставляет статические методы для маппинга объектов.
+ * Маппер для преобразования между сущностью User и DTO.
  */
-@UtilityClass
-public class UserMapper {
-
-    /**
-     * Преобразует сущность User в UserDto.
-     *
-     * @param user сущность пользователя
-     * @return DTO пользователя
-     */
-    public static UserDto mapToDto(User user) {
-        return UserDto.builder()
-                .id(user.getId())
-                .name(user.getName())
-                .email(user.getEmail())
-                .build();
-    }
+@Mapper(componentModel = "spring")
+public interface UserMapper {
 
     /**
      * Преобразует NewUserRequest в сущность User.
      *
-     * @param newUserRequest DTO для создания пользователя
+     * @param request DTO для создания
      * @return сущность пользователя
      */
-    public static User mapToUser(NewUserRequest newUserRequest) {
-        return User.builder()
-                .name(newUserRequest.getName())
-                .email(newUserRequest.getEmail())
-                .build();
-    }
+    @Mapping(target = "id", ignore = true)
+    User toEntity(NewUserRequest request);
 
     /**
-     * Преобразует UserDto в сущность User.
+     * Преобразует сущность User в UserDto.
      *
-     * @param userDto DTO пользователя
-     * @return сущность пользователя
+     * @param user сущность
+     * @return DTO пользователя
      */
-    public static User mapFromDto(UserDto userDto) {
-        return User.builder()
-                .id(userDto.getId())
-                .name(userDto.getName())
-                .email(userDto.getEmail())
-                .build();
-    }
+    UserDto toDto(User user);
 
     /**
      * Преобразует сущность User в UserShortDto.
      *
-     * @param user сущность пользователя
+     * @param user сущность
      * @return краткое DTO пользователя
      */
-    public static UserShortDto mapToUserShortDto(User user) {
-        return UserShortDto.builder()
-                .id(user.getId())
-                .name(user.getName())
-                .build();
-    }
+    UserShortDto toShortDto(User user);
 }

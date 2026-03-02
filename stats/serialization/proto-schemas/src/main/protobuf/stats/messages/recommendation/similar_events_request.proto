@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package stats.messages.recommendation;
+
+option java_multiple_files = true;
+option java_package = "ru.practicum.grpc.stats.recommendation";
+
+/**
+ * Запрос на поиск похожих мероприятий.
+ */
+message SimilarEventsRequestProto {
+  int64 event_id = 1;        // Идентификатор мероприятия, для которого ищутся похожие
+  int64 user_id = 2;          // Идентификатор пользователя (для фильтрации уже просмотренных)
+  int32 max_results = 3;      // Максимальное количество результатов
+}

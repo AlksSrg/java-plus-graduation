@@ -15,7 +15,5 @@
     <modules>
         <module>avro-schemas</module>
         <module>proto-schemas</module>
-        <module>serializer</module>
-        <module>deserializer</module>
     </modules>
 </project>

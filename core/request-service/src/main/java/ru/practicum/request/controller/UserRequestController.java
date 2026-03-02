@@ -7,7 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import ru.practicum.ewm.client.UserActionClient;
-import ru.practicum.ewm.stats.proto.ActionTypeProto;
+import ru.practicum.grpc.stats.action.ActionTypeProto;
 import ru.practicum.request.dto.ParticipationRequestDto;
 import ru.practicum.request.service.RequestService;
 
@@ -18,6 +18,7 @@ import java.util.concurrent.Executors;
 
 /**
  * Контроллер для операций пользователей с запросами на участие.
+ * Предоставляет API для создания, отмены и просмотра запросов от имени текущего пользователя.
  */
 @Slf4j
 @Validated
@@ -31,9 +32,9 @@ public class UserRequestController {
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     /**
-     * Получает все запросы пользователя.
+     * Получает все запросы текущего пользователя.
      *
-     * @param userId идентификатор пользователя
+     * @param userId идентификатор пользователя (из пути)
      * @return список запросов пользователя
      */
     @GetMapping
@@ -43,10 +44,10 @@ public class UserRequestController {
     }
 
     /**
-     * Создает новый запрос на участие в событии.
+     * Создаёт новый запрос на участие в событии.
      *
-     * @param userId  идентификатор пользователя
-     * @param eventId идентификатор события
+     * @param userId  идентификатор пользователя (из пути)
+     * @param eventId идентификатор события (параметр запроса)
      * @return созданный запрос
      */
     @PostMapping
@@ -57,13 +58,13 @@ public class UserRequestController {
 
         ParticipationRequestDto request = requestService.createRequest(userId, eventId);
 
-        // Отправляем информацию о регистрации асинхронно
+        // Асинхронная отправка действия регистрации в stats-collector
         executorService.submit(() -> {
             try {
                 userActionClient.collectUserAction(userId, eventId, ActionTypeProto.ACTION_REGISTER, Instant.now());
-                log.debug("Sent REGISTER action for user {} event {}", userId, eventId);
+                log.debug("Отправлено ACTION_REGISTER для пользователя {} события {}", userId, eventId);
             } catch (Exception e) {
-                log.error("Error sending REGISTER action to collector for user {} event {}", userId, eventId, e);
+                log.error("Ошибка отправки ACTION_REGISTER", e);
             }
         });
 
@@ -73,9 +74,9 @@ public class UserRequestController {
     /**
      * Отменяет запрос на участие.
      *
-     * @param userId    идентификатор пользователя
-     * @param requestId идентификатор запроса
-     * @return отмененный запрос
+     * @param userId    идентификатор пользователя (из пути)
+     * @param requestId идентификатор запроса (из пути)
+     * @return отменённый запрос
      */
     @PatchMapping("/{requestId}/cancel")
     public ParticipationRequestDto cancelRequest(@PathVariable @Positive Long userId,

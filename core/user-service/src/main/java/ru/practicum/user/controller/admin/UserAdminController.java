@@ -5,55 +5,50 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import ru.practicum.user.dto.NewUserRequest;
 import ru.practicum.user.dto.UserDto;
 import ru.practicum.user.service.UserService;
-import ru.practicum.user.util.UserGetParam;
 
 import java.util.List;
 
 /**
- * Контроллер для управления пользователями (административный функционал).
- * <p>
- * Предоставляет API для создания, получения и удаления пользователей.
+ * Контроллер для административных операций с пользователями.
  */
 @Slf4j
 @Validated
-@RequiredArgsConstructor
 @RestController
 @RequestMapping("/admin/users")
+@RequiredArgsConstructor
 public class UserAdminController {
+
     private final UserService userService;
 
     /**
-     * Получает перечень пользователей с возможностью фильтрации по идентификаторам и пагинацией.
+     * Получает список пользователей с фильтрацией по идентификаторам и пагинацией.
      *
-     * @param ids  список идентификаторов пользователей для фильтрации (опционально)
-     * @param from количество элементов, которые нужно пропустить для формирования текущего набора
-     * @param size количество элементов в наборе
+     * @param ids  список идентификаторов (опционально)
+     * @param from начальная позиция
+     * @param size размер страницы
      * @return список пользователей
      */
     @GetMapping
     public List<UserDto> getUsers(@RequestParam(required = false) List<Long> ids,
-                                  @RequestParam(defaultValue = "0")
-                                  @PositiveOrZero(message = "Значение не может быть меньше нуля") int from,
-                                  @RequestParam(defaultValue = "10")
-                                  @Positive(message = "Значение может быть только положительным") int size) {
+                                  @RequestParam(defaultValue = "0") @PositiveOrZero int from,
+                                  @RequestParam(defaultValue = "10") @Positive int size) {
         log.info("GET /admin/users with ids={}, from={}, size={}", ids, from, size);
-        return userService.getUsers(UserGetParam.builder()
-                .ids(ids)
-                .from(from)
-                .size(size)
-                .build());
+        Pageable pageable = PageRequest.of(from / size, size);
+        return userService.getUsers(ids, pageable);
     }
 
     /**
      * Получает пользователя по идентификатору.
      *
-     * @param userId идентификатор пользователя
+     * @param userId идентификатор
      * @return DTO пользователя
      */
     @GetMapping("/{userId}")
@@ -63,22 +58,22 @@ public class UserAdminController {
     }
 
     /**
-     * Создает нового пользователя.
+     * Создаёт нового пользователя.
      *
-     * @param newUserRequest данные нового пользователя
+     * @param request данные для создания
      * @return созданный пользователь
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public UserDto createUser(@RequestBody @Valid NewUserRequest newUserRequest) {
-        log.info("POST /admin/users with body: {}", newUserRequest);
-        return userService.createUser(newUserRequest);
+    public UserDto createUser(@RequestBody @Valid NewUserRequest request) {
+        log.info("POST /admin/users with body: {}", request);
+        return userService.createUser(request);
     }
 
     /**
      * Удаляет пользователя по идентификатору.
      *
-     * @param userId идентификатор пользователя
+     * @param userId идентификатор
      */
     @DeleteMapping("/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

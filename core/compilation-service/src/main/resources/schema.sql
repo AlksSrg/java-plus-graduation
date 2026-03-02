@@ -1,6 +1,10 @@
 -- Создание схемы
 CREATE SCHEMA IF NOT EXISTS compilation_schema;
-SET search_path TO compilation_schema;
+SET
+search_path TO compilation_schema;
+
+DROP TABLE IF EXISTS compilation_events CASCADE;
+DROP TABLE IF EXISTS compilations CASCADE;
 
 -- Создание таблицы подборок
 CREATE TABLE IF NOT EXISTS compilations

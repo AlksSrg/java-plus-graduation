@@ -1,158 +1,55 @@
 package ru.practicum.event.mapper;
 
-import org.springframework.stereotype.Component;
+import org.mapstruct.*;
 import ru.practicum.category.dto.CategoryDto;
 import ru.practicum.event.dto.EventFullDto;
 import ru.practicum.event.dto.EventShortDto;
 import ru.practicum.event.dto.NewEventDto;
+import ru.practicum.event.dto.UpdateEventUserRequest;
 import ru.practicum.event.model.Event;
-import ru.practicum.event.util.State;
 import ru.practicum.user.dto.UserShortDto;
 
-import java.time.LocalDateTime;
-
 /**
- * Маппер для преобразования между сущностями и DTO событий.
+ * Маппер для преобразования между сущностью Event и DTO.
  */
-@Component
-public class EventMapper {
+@Mapper(componentModel = "spring")
+public interface EventMapper {
 
-    /**
-     * Преобразует DTO в сущность события.
-     *
-     * @param newEventDto DTO для создания
-     * @return сущность события
-     */
-    public Event toEntity(NewEventDto newEventDto) {
-        if (newEventDto == null) {
-            return null;
-        }
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "categoryId", source = "category")
+    @Mapping(target = "initiatorId", ignore = true)
+    @Mapping(target = "createdOn", ignore = true)
+    @Mapping(target = "publishedOn", ignore = true)
+    @Mapping(target = "state", ignore = true)
+    @Mapping(target = "confirmedRequests", ignore = true)
+    @Mapping(target = "rating", ignore = true)
+    Event toEntity(NewEventDto newEventDto);
 
-        return Event.builder()
-                .title(newEventDto.getTitle())
-                .annotation(newEventDto.getAnnotation())
-                .description(newEventDto.getDescription())
-                .eventDate(newEventDto.getEventDate())
-                .location(newEventDto.getLocation())
-                .paid(newEventDto.getPaid() != null ? newEventDto.getPaid() : false)
-                .participantLimit(newEventDto.getParticipantLimit() != null ? newEventDto.getParticipantLimit() : 0)
-                .requestModeration(newEventDto.getRequestModeration() != null ? newEventDto.getRequestModeration() : true)
-                .createdOn(LocalDateTime.now())
-                .state(State.PENDING)
-                .confirmedRequests(0L)
-                .rating(0.0)
-                .build();
-    }
+    @Mapping(target = "id", source = "event.id")
+    @Mapping(target = "category", source = "categoryDto")
+    @Mapping(target = "initiator", source = "userShortDto")
+    @Mapping(target = "confirmedRequests", source = "confirmedRequests")
+    @Mapping(target = "rating", source = "rating")
+    EventFullDto toFullDto(Event event, CategoryDto categoryDto, UserShortDto userShortDto,
+                           Long confirmedRequests, Double rating);
 
-    /**
-     * Преобразует сущность в полное DTO.
-     *
-     * @param event       сущность события
-     * @param categoryDto DTO категории
-     * @param userDto     DTO пользователя
-     * @return полное DTO события
-     */
-    public EventFullDto toFullDto(Event event, CategoryDto categoryDto, UserShortDto userDto) {
-        if (event == null) {
-            return null;
-        }
+    @Mapping(target = "id", source = "event.id")
+    @Mapping(target = "category", source = "categoryDto")
+    @Mapping(target = "initiator", source = "userShortDto")
+    @Mapping(target = "confirmedRequests", source = "confirmedRequests")
+    @Mapping(target = "rating", source = "rating")
+    @Mapping(target = "views", ignore = true)
+    EventShortDto toShortDto(Event event, CategoryDto categoryDto, UserShortDto userShortDto,
+                             Long confirmedRequests, Double rating);
 
-        return EventFullDto.builder()
-                .id(event.getId())
-                .title(event.getTitle())
-                .annotation(event.getAnnotation())
-                .description(event.getDescription())
-                .category(categoryDto)
-                .initiator(userDto)
-                .location(event.getLocation())
-                .paid(event.getPaid())
-                .participantLimit(event.getParticipantLimit())
-                .requestModeration(event.getRequestModeration())
-                .state(event.getState())
-                .eventDate(event.getEventDate())
-                .createdOn(event.getCreatedOn())
-                .publishedOn(event.getPublishedOn())
-                .confirmedRequests(event.getConfirmedRequests())
-                .rating(event.getRating())
-                .build();
-    }
-
-    /**
-     * Преобразует сущность в краткое DTO.
-     *
-     * @param event       сущность события
-     * @param categoryDto DTO категории
-     * @param userDto     DTO пользователя
-     * @return краткое DTO события
-     */
-    public EventShortDto toShortDto(Event event, CategoryDto categoryDto, UserShortDto userDto) {
-        if (event == null) {
-            return null;
-        }
-
-        return EventShortDto.builder()
-                .id(event.getId())
-                .title(event.getTitle())
-                .annotation(event.getAnnotation())
-                .category(categoryDto)
-                .initiator(userDto)
-                .paid(event.getPaid())
-                .eventDate(event.getEventDate())
-                .confirmedRequests(event.getConfirmedRequests())
-                .rating(event.getRating())
-                .build();
-    }
-
-    /**
-     * Преобразует сущность в полное DTO без дополнительных параметров.
-     * Используется когда категория и пользователь уже загружены в сущности.
-     *
-     * @param event сущность события
-     * @return полное DTO события
-     */
-    public EventFullDto toFullDto(Event event) {
-        if (event == null) {
-            return null;
-        }
-
-        return EventFullDto.builder()
-                .id(event.getId())
-                .title(event.getTitle())
-                .annotation(event.getAnnotation())
-                .description(event.getDescription())
-                .location(event.getLocation())
-                .paid(event.getPaid())
-                .participantLimit(event.getParticipantLimit())
-                .requestModeration(event.getRequestModeration())
-                .state(event.getState())
-                .eventDate(event.getEventDate())
-                .createdOn(event.getCreatedOn())
-                .publishedOn(event.getPublishedOn())
-                .confirmedRequests(event.getConfirmedRequests())
-                .rating(event.getRating())
-                .build();
-    }
-
-    /**
-     * Преобразует сущность в краткое DTO без дополнительных параметров.
-     * Используется когда категория и пользователь уже загружены в сущности.
-     *
-     * @param event сущность события
-     * @return краткое DTO события
-     */
-    public EventShortDto toShortDto(Event event) {
-        if (event == null) {
-            return null;
-        }
-
-        return EventShortDto.builder()
-                .id(event.getId())
-                .title(event.getTitle())
-                .annotation(event.getAnnotation())
-                .paid(event.getPaid())
-                .eventDate(event.getEventDate())
-                .confirmedRequests(event.getConfirmedRequests())
-                .rating(event.getRating())
-                .build();
-    }
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "initiatorId", ignore = true)
+    @Mapping(target = "createdOn", ignore = true)
+    @Mapping(target = "publishedOn", ignore = true)
+    @Mapping(target = "state", ignore = true)
+    @Mapping(target = "confirmedRequests", ignore = true)
+    @Mapping(target = "rating", ignore = true)
+    @Mapping(target = "categoryId", source = "category")
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    void updateFromUserRequest(UpdateEventUserRequest request, @MappingTarget Event event);
 }

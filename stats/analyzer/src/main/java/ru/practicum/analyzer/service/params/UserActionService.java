@@ -16,7 +16,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Сервис для работы с действиями пользователей.
+ * Сервис для работы с действиями пользователей (чтение из БД).
  */
 @Slf4j
 @Service
@@ -24,63 +24,53 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class UserActionService {
 
-    private final UserActionRepository userActionRepository;
-    private final ActionWeightService actionWeightService;
+    private final UserActionRepository repository;
+    private final ActionWeightService weightService;
 
     /**
-     * Возвращает ID недавно просмотренных мероприятий.
+     * Возвращает идентификаторы событий, с которыми пользователь взаимодействовал недавно.
      *
-     * @param userId ID пользователя
-     * @param limit  лимит
-     * @return набор ID мероприятий
+     * @param userId идентификатор пользователя
+     * @param limit  максимальное количество
+     * @return множество идентификаторов событий
      */
     public Set<Long> getRecentlyViewedEventIds(Long userId, int limit) {
+        log.info("Поиск последних {} действий пользователя {}", limit, userId);
         PageRequest page = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "timestamp"));
-        return userActionRepository.findAllByUserId(userId, page).stream()
+        return repository.findAllByUserId(userId, page).stream()
                 .map(UserAction::getEventId)
                 .collect(Collectors.toSet());
     }
 
     /**
-     * Проверяет, взаимодействовал ли пользователь с мероприятием.
-     *
-     * @param userId  ID пользователя
-     * @param eventId ID мероприятия
-     * @return true если взаимодействовал
+     * Проверяет, взаимодействовал ли пользователь с указанным событием.
      */
     public boolean hasUserInteractedWithEvent(Long userId, Long eventId) {
-        return userActionRepository.existsByEventIdAndUserId(eventId, userId);
+        return repository.existsByEventIdAndUserId(eventId, userId);
     }
 
     /**
-     * Возвращает оценки пользователя для мероприятий.
-     *
-     * @param userId   ID пользователя
-     * @param eventIds набор ID мероприятий
-     * @return карта оценок
+     * Возвращает оценки пользователя для заданных событий (вес действия).
      */
     public Map<Long, Double> getUserRatingsForEvents(Long userId, Set<Long> eventIds) {
-        return userActionRepository.findAllByEventIdInAndUserId(eventIds, userId).stream()
+        log.info("Получение оценок пользователя {} для {} событий", userId, eventIds.size());
+        return repository.findAllByEventIdInAndUserId(eventIds, userId).stream()
                 .collect(Collectors.toMap(
                         UserAction::getEventId,
-                        a -> actionWeightService.getWeight(a.getActionType())
+                        action -> weightService.getWeight(action.getActionType())
                 ));
     }
 
     /**
-     * Вычисляет суммарные оценки для мероприятий.
-     *
-     * @param eventIds набор ID мероприятий
-     * @return карта суммарных оценок
+     * Вычисляет суммарные баллы для каждого события на основе действий всех пользователей.
      */
     public Map<Long, Double> computeEventScores(Set<Long> eventIds) {
+        log.info("Вычисление суммарных баллов для {} событий", eventIds.size());
         Map<Long, Double> scores = new HashMap<>();
-
-        userActionRepository.findAllByEventIdIn(eventIds).forEach(action -> {
-            double weight = actionWeightService.getWeight(action.getActionType());
+        repository.findAllByEventIdIn(eventIds).forEach(action -> {
+            double weight = weightService.getWeight(action.getActionType());
             scores.merge(action.getEventId(), weight, Double::sum);
         });
-
         return scores;
     }
 }
