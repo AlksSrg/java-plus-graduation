@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package stats.services;
+package stats.service.dashboard;
 
 import "stats/messages/recommendation/user_predictions_request.proto";
 import "stats/messages/recommendation/similar_events_request.proto";
@@ -8,7 +8,7 @@ import "stats/messages/recommendation/interactions_count_request.proto";
 import "stats/messages/recommendation/recommended_event.proto";
 
 option java_multiple_files = true;
-option java_package = "ru.practicum.grpc.stats";
+option java_package = "ru.practicum.grpc.stats.recommendation";
 
 /**
  * gRPC сервис для получения рекомендаций и статистики.

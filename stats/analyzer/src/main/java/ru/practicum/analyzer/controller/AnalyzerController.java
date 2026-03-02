@@ -6,11 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import ru.practicum.analyzer.service.AnalyzerService;
-import ru.practicum.grpc.stats.RecommendationsControllerGrpc;
-import ru.practicum.grpc.stats.recommendation.InteractionsCountRequestProto;
-import ru.practicum.grpc.stats.recommendation.RecommendedEventProto;
-import ru.practicum.grpc.stats.recommendation.SimilarEventsRequestProto;
-import ru.practicum.grpc.stats.recommendation.UserPredictionsRequestProto;
+import ru.practicum.grpc.stats.recommendation.*;
 
 /**
  * gRPC контроллер для обработки запросов рекомендаций.

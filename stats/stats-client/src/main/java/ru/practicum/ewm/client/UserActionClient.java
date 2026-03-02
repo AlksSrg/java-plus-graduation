@@ -4,9 +4,9 @@ import com.google.protobuf.Timestamp;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
-import ru.practicum.grpc.stats.UserActionControllerGrpc;
 import ru.practicum.grpc.stats.action.ActionTypeProto;
 import ru.practicum.grpc.stats.action.UserActionProto;
+import ru.practicum.grpc.stats.collector.UserActionControllerGrpc;
 
 import java.time.Instant;
 
