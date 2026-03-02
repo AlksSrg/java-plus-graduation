@@ -13,7 +13,7 @@ import java.io.IOException;
 /**
  * Базовый сериализатор для любых Avro-записей.
  */
-public class BaseAvroSerializer implements Serializer<SpecificRecordBase> {
+public class EventSimilaritySerializer implements Serializer<SpecificRecordBase> {
 
     private final EncoderFactory encoderFactory = EncoderFactory.get();
 
