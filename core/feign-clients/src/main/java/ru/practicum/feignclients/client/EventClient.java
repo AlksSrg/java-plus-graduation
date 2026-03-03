@@ -14,7 +14,7 @@ import java.util.List;
  * Feign-клиент для взаимодействия с event-service.
  * Предоставляет методы для получения информации о событиях.
  */
-@FeignClient(name = "event-service", configuration = FeignConfiguration.class)
+@FeignClient(name = "event-service", path = "/events/internal", configuration = FeignConfiguration.class)
 public interface EventClient {
 
     /**
@@ -23,7 +23,7 @@ public interface EventClient {
      * @param eventId идентификатор события
      * @return полное DTO события
      */
-    @GetMapping("/events/internal/{eventId}")
+    @GetMapping("/{eventId}")
     EventFullDto getEventById(@PathVariable("eventId") Long eventId);
 
     /**
@@ -32,7 +32,7 @@ public interface EventClient {
      * @param eventId идентификатор события
      * @return краткое DTO события
      */
-    @GetMapping("/events/{eventId}/short")
+    @GetMapping("/{eventId}/short")
     EventShortDto getEventShortById(@PathVariable("eventId") Long eventId);
 
     /**
@@ -41,7 +41,7 @@ public interface EventClient {
      * @param eventIds список идентификаторов событий
      * @return список кратких DTO событий
      */
-    @GetMapping("/events/by-ids")
+    @GetMapping("/by-ids")
     List<EventShortDto> getEventsByIds(@RequestParam("ids") List<Long> eventIds);
 
     /**
@@ -50,7 +50,7 @@ public interface EventClient {
      * @param eventId идентификатор события
      * @return true, если событие существует
      */
-    @GetMapping("/events/{eventId}/exists")
+    @GetMapping("/{eventId}/exists")
     Boolean existsEventById(@PathVariable("eventId") Long eventId);
 
     /**
@@ -59,6 +59,6 @@ public interface EventClient {
      * @param categoryId идентификатор категории
      * @return true, если есть хотя бы одно событие с данной категорией
      */
-    @GetMapping("/events/by-category/{categoryId}/exists")
+    @GetMapping("/by-category/{categoryId}/exists")
     Boolean existsByCategoryId(@PathVariable("categoryId") Long categoryId);
 }

@@ -2,6 +2,8 @@ server:
   port: 0
 
 spring:
+  application:
+    name: comments-service
   datasource:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://localhost:8032/main?currentSchema=comment_schema
@@ -10,11 +12,12 @@ spring:
   jpa:
     hibernate:
       ddl-auto: none
+      format-sql: true
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         default_schema: comment_schema
-        format_sql: true
+        format-sql: true
     show-sql: true
   sql:
     init:
@@ -34,9 +37,10 @@ eureka:
 logging:
   level:
     ru.practicum: DEBUG
-    org.springframework.web: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql: TRACE
+    org.springframework.orm.jpa: WARN
+    org.springframework.orm.jpa.JpaTransactionManager: WARN
+    org.springframework.transaction: WARN
+    org.springframework.transaction.interceptor: WARN
 
 management:
   endpoints:

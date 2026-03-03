@@ -433,8 +433,8 @@ public class EventServiceImpl implements EventService {
         try {
             return userClient.getUserShortById(userId);
         } catch (Exception e) {
-            log.warn("Не удалось получить краткую информацию о пользователе {}", userId);
-            return null;
+            log.error("Не удалось получить информацию о пользователе {}", userId, e);
+            throw new NotFoundResource("Пользователь с id " + userId + " не найден");
         }
     }
 
