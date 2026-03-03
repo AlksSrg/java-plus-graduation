@@ -23,15 +23,13 @@ spring:
 
 kafka:
   bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-  consumer:
-    group-id: analyzer-group
-    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    value-deserializer: ru.practicum.ewm.stats.avro.deserializer.UserActionAvroDeserializer
-    auto-offset-reset: earliest
-    enable-auto-commit: false
+  group-id:
+    similarity: analyzer-similarity-group
+    actions: analyzer-actions-group
+  auto-commit: false
   topics:
-    hub-events: telemetry.hubs.v1
-    snapshots: telemetry.snapshots.v1
+    event-similarity: stats.events-similarity.v1
+    user-actions: stats.user-actions.v1
 
 eureka:
   client:
@@ -45,12 +43,8 @@ eureka:
     instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
 
 grpc:
-  client:
-    hub-router:
-      address: discovery:///hub-router
-      enable-keep-alive: true
-      keep-alive-without-calls: true
-      negotiation-type: plaintext
+  server:
+    port: 0
 
 logging:
   level:

@@ -80,37 +80,42 @@ public class AggregationService {
         log.debug("Сумма весов для eventId={} обновлена: {} -> {}", eventId, oldSum, newSum);
     }
 
-    private double updateMinWeightSums(long userId, long eventA, long eventB,
-                                       double oldWeightA, double newWeightA) {
-        long first = Math.min(eventA, eventB);
-        long second = Math.max(eventA, eventB);
+    private double updateMinWeightSums(long userId, long eventId, long otherEventId,
+                                       double oldWeight, double newWeight) {
+        long eventA = Math.min(eventId, otherEventId);
+        long eventB = Math.max(eventId, otherEventId);
 
-        double weightB = eventActions.getOrDefault(second, Collections.emptyMap())
+        double otherWeight = eventActions
+                .getOrDefault(otherEventId, Collections.emptyMap())
                 .getOrDefault(userId, 0.0);
-        if (weightB == 0.0) return 0.0;
 
-        Map<Long, Double> minWeights = eventMinWeightSums.computeIfAbsent(first, k -> new HashMap<>());
-        double oldSum = minWeights.getOrDefault(second, 0.0);
+        if (otherWeight == 0.0) return 0.0;
 
-        double oldMin = Math.min(oldWeightA, weightB);
-        double newMin = Math.min(newWeightA, weightB);
+        Map<Long, Double> minWeights = eventMinWeightSums.computeIfAbsent(eventA, k -> new HashMap<>());
+        double oldSum = minWeights.getOrDefault(eventB, 0.0);
+
+        double oldMin = Math.min(oldWeight, otherWeight);
+        double newMin = Math.min(newWeight, otherWeight);
         double newSum = oldSum - oldMin + newMin;
-        minWeights.put(second, newSum);
+        minWeights.put(eventB, newSum);
 
         return newSum;
     }
 
-    private double calculateSimilarity(long eventA, long eventB, double minSum) {
-        double sumA = eventWeightSums.getOrDefault(eventA, 0.0);
-        double sumB = eventWeightSums.getOrDefault(eventB, 0.0);
-        if (sumA <= 0 || sumB <= 0) return 0.0;
-        return minSum / Math.sqrt(sumA * sumB);
+    private double calculateSimilarity(long eventId, long otherEventId, double minSum) {
+        log.debug("Вычисление схожести для событий {} и {}", eventId, otherEventId);
+        double sumEvent = eventWeightSums.getOrDefault(eventId, 0.0);
+        double sumOther = eventWeightSums.getOrDefault(otherEventId, 0.0);
+        if (sumEvent <= 0 || sumOther <= 0) return 0.0;
+        return minSum / Math.sqrt(sumEvent * sumOther);
     }
 
-    private EventSimilarityAvro createSimilarityAvro(long eventA, long eventB, double score, Instant timestamp) {
+    private EventSimilarityAvro createSimilarityAvro(long eventId, long otherEventId, double score, Instant timestamp) {
+        long eventA = Math.min(eventId, otherEventId);
+        long eventB = Math.max(eventId, otherEventId);
         return EventSimilarityAvro.newBuilder()
-                .setEventA(Math.min(eventA, eventB))
-                .setEventB(Math.max(eventA, eventB))
+                .setEventA(eventA)
+                .setEventB(eventB)
                 .setScore(score)
                 .setTimestamp(timestamp)
                 .build();
