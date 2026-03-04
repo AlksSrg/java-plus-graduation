@@ -3,10 +3,9 @@ server:
 
 spring:
   datasource:
-    driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:9032/stats?currentSchema=analyzer_schema
-    username: stats
-    password: stats
+    url: ${ANALYZER_DB_URL:jdbc:postgresql://localhost:6542/analyzer_server?currentSchema=analyzer_schema}
+    username: ${ANALYZER_DB_USER:localuser}
+    password: ${ANALYZER_DB_PASSWORD:localpass}
   jpa:
     hibernate:
       ddl-auto: none
