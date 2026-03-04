@@ -22,12 +22,14 @@ public interface CompilationMapper {
     /**
      * Преобразует NewCompilationDto в сущность Compilation.
      * ID игнорируется, eventIds будет заполнен отдельно.
+     * Для поля pinned устанавливается значение по умолчанию false.
      *
      * @param dto DTO для создания
      * @return сущность подборки
      */
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "eventIds", ignore = true)
+    @Mapping(target = "pinned", defaultValue = "false")
     Compilation toEntity(NewCompilationDto dto);
 
     /**

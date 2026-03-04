@@ -48,6 +48,11 @@ public class CompilationServiceImpl implements CompilationService {
 
         Compilation compilation = compilationMapper.toEntity(newCompilationDto);
 
+        // Дополнительная защита от null (если маппер по какой-то причине не сработает)
+        if (compilation.getPinned() == null) {
+            compilation.setPinned(false);
+        }
+
         // Проверяем существование событий через EventClient
         if (newCompilationDto.getEvents() != null && !newCompilationDto.getEvents().isEmpty()) {
             List<Long> eventIds = newCompilationDto.getEvents();
@@ -67,7 +72,8 @@ public class CompilationServiceImpl implements CompilationService {
 
         try {
             Compilation savedCompilation = compilationRepository.save(compilation);
-            log.info("Compilation created successfully with id: {}", savedCompilation.getId());
+            log.info("Compilation created successfully with id: {}, pinned: {}",
+                    savedCompilation.getId(), savedCompilation.getPinned());
 
             List<EventShortDto> events = savedCompilation.getEventIds().isEmpty()
                     ? Collections.emptyList()

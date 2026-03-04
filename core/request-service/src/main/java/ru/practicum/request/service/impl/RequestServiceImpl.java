@@ -148,7 +148,12 @@ public class RequestServiceImpl implements RequestService {
     @Transactional
     public ParticipationRequestDto updateRequestStatus(long requestId, Status status) {
         log.info("Обновление статуса запроса {} на {}", requestId, status);
+
         Request request = getRequestOrThrow(requestId);
+
+        // Проверка возможности изменения статуса
+        validateStatusTransition(request.getStatus(), status);
+
         request.setStatus(status);
         Request updated = requestRepository.save(request);
         return requestMapper.toDto(updated);
@@ -261,6 +266,44 @@ public class RequestServiceImpl implements RequestService {
             if (req.getStatus() != Status.PENDING) {
                 throw new ConflictResource("Запрос " + req.getId() + " не в статусе PENDING");
             }
+        }
+    }
+
+    /**
+     * Проверяет возможность перехода из текущего статуса в новый.
+     *
+     * @param currentStatus текущий статус
+     * @param newStatus     новый статус
+     * @throws ConflictResource если переход невозможен
+     */
+    private void validateStatusTransition(Status currentStatus, Status newStatus) {
+        // Если статус не меняется - разрешаем
+        if (currentStatus == newStatus) {
+            return;
+        }
+
+        switch (currentStatus) {
+            case PENDING:
+                // Из PENDING можно перейти в любой статус
+                break;
+            case CONFIRMED:
+                // Из CONFIRMED нельзя перейти в REJECTED или другие статусы
+                throw new ConflictResource(
+                        String.format("Невозможно изменить статус с %s на %s: подтверждённый запрос нельзя отклонить",
+                                currentStatus, newStatus));
+            case REJECTED:
+                // Из REJECTED нельзя изменить статус
+                throw new ConflictResource(
+                        String.format("Невозможно изменить статус с %s на %s: отклонённый запрос нельзя изменить",
+                                currentStatus, newStatus));
+            case CANCELED:
+                // Из CANCELED нельзя изменить статус
+                throw new ConflictResource(
+                        String.format("Невозможно изменить статус с %s на %s: отменённый запрос нельзя изменить",
+                                currentStatus, newStatus));
+            default:
+                throw new ConflictResource(
+                        String.format("Невозможно изменить статус с %s на %s", currentStatus, newStatus));
         }
     }
 }

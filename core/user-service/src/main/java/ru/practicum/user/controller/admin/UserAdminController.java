@@ -12,6 +12,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import ru.practicum.user.dto.NewUserRequest;
 import ru.practicum.user.dto.UserDto;
+import ru.practicum.user.dto.UserShortDto;
 import ru.practicum.user.service.UserService;
 
 import java.util.List;
@@ -80,5 +81,17 @@ public class UserAdminController {
     public void deleteUser(@PathVariable @Positive Long userId) {
         log.info("DELETE /admin/users/{}", userId);
         userService.deleteUser(userId);
+    }
+
+    /**
+     * Получает краткую информацию о пользователе по идентификатору (для внутренних сервисов).
+     *
+     * @param userId идентификатор
+     * @return краткое DTO пользователя
+     */
+    @GetMapping("/{userId}/short")
+    public UserShortDto getUserShortById(@PathVariable @Positive Long userId) {
+        log.info("Admin: запрос краткого DTO пользователя {}", userId);
+        return userService.getUserShortDtoById(userId);
     }
 }

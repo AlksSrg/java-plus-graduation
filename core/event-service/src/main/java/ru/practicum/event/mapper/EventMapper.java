@@ -23,6 +23,9 @@ public interface EventMapper {
     @Mapping(target = "state", ignore = true)
     @Mapping(target = "confirmedRequests", ignore = true)
     @Mapping(target = "rating", ignore = true)
+    @Mapping(target = "paid", defaultValue = "false")
+    @Mapping(target = "participantLimit", defaultValue = "0")
+    @Mapping(target = "requestModeration", defaultValue = "true")
     Event toEntity(NewEventDto newEventDto);
 
     @Mapping(target = "id", source = "event.id")
@@ -50,6 +53,9 @@ public interface EventMapper {
     @Mapping(target = "confirmedRequests", ignore = true)
     @Mapping(target = "rating", ignore = true)
     @Mapping(target = "categoryId", source = "category")
+    @Mapping(target = "paid", source = "paid")
+    @Mapping(target = "participantLimit", source = "participantLimit")
+    @Mapping(target = "requestModeration", source = "requestModeration")
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     void updateFromUserRequest(UpdateEventUserRequest request, @MappingTarget Event event);
 }

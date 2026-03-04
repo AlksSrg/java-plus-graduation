@@ -35,6 +35,7 @@ import ru.practicum.user.dto.UserShortDto;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -240,7 +241,11 @@ public class EventServiceImpl implements EventService {
             }
         }
 
-        EventRequestStatusUpdateResult result = new EventRequestStatusUpdateResult();
+        EventRequestStatusUpdateResult result = EventRequestStatusUpdateResult.builder()
+                .confirmedRequests(new ArrayList<>())
+                .rejectedRequests(new ArrayList<>())
+                .build();
+
         for (Long reqId : request.getRequestIds()) {
             ParticipationRequestDto updated = requestClient.updateRequestStatus(reqId, request.getStatus());
             if (request.getStatus() == Status.CONFIRMED) {
