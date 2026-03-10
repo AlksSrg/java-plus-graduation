@@ -5,6 +5,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import ru.practicum.config.FeignConfiguration;
 import ru.practicum.request.dto.ParticipationRequestDto;
 import ru.practicum.request.util.Status;
 
@@ -12,13 +13,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Feign-клиент для взаимодействия с Request Service.
+ * Feign-клиент для взаимодействия с request-service.
+ * Предоставляет методы для работы с запросами на участие в событиях.
  */
-@FeignClient(name = "request-service", path = "/requests")
+@FeignClient(name = "request-service", path = "/requests", configuration = FeignConfiguration.class)
 public interface RequestClient {
 
     /**
-     * Получает запросы по идентификатору события.
+     * Получает список запросов для указанного события.
      *
      * @param eventId идентификатор события
      * @return список запросов
@@ -27,7 +29,7 @@ public interface RequestClient {
     List<ParticipationRequestDto> getRequestsByEventId(@PathVariable("eventId") long eventId);
 
     /**
-     * Получает запросы по списку идентификаторов.
+     * Получает запросы по их идентификаторам.
      *
      * @param ids список идентификаторов запросов
      * @return список запросов
@@ -36,19 +38,19 @@ public interface RequestClient {
     List<ParticipationRequestDto> getRequestsByIds(@RequestParam("ids") List<Long> ids);
 
     /**
-     * Получает количество подтвержденных запросов для события.
+     * Получает количество подтверждённых запросов для события.
      *
      * @param eventId идентификатор события
-     * @return количество подтвержденных запросов
+     * @return количество подтверждённых запросов
      */
     @GetMapping("/count-confirmed/{eventId}")
     Long countConfirmedRequestsByEventId(@PathVariable("eventId") long eventId);
 
     /**
-     * Получает количество подтвержденных запросов для списка событий.
+     * Получает количество подтверждённых запросов для нескольких событий.
      *
      * @param eventIds список идентификаторов событий
-     * @return карта eventId -> количество подтвержденных запросов
+     * @return карта, где ключ — идентификатор события, значение — количество подтверждённых запросов
      */
     @GetMapping("/count-confirmed-by-events")
     Map<Long, Long> countConfirmedRequestsByEventIds(@RequestParam("eventIds") List<Long> eventIds);
@@ -58,7 +60,7 @@ public interface RequestClient {
      *
      * @param requestId идентификатор запроса
      * @param status    новый статус
-     * @return обновленный запрос
+     * @return обновлённый запрос
      */
     @PutMapping("/{requestId}/status")
     ParticipationRequestDto updateRequestStatus(@PathVariable("requestId") long requestId,

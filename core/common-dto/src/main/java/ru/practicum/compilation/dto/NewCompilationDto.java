@@ -18,6 +18,10 @@ import java.util.List;
 public class NewCompilationDto {
     private List<Long> events;
 
+    /**
+     * Флаг закрепленности подборки.
+     * Если не указан, по умолчанию должен быть false.
+     */
     private Boolean pinned;
 
     @NotBlank(message = "Заголовок не должен быть пустым")

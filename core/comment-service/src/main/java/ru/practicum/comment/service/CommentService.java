@@ -8,58 +8,68 @@ import ru.practicum.comment.util.CommentGetParam;
 import java.util.List;
 
 /**
- * Сервисный интерфейс для управления комментариями.
- * Определяет контракт для операций с комментариями пользователей к событиям.
+ * Сервис для управления комментариями.
+ * Определяет операции для пользователей, публичного доступа и администраторов.
  */
 public interface CommentService {
 
     /**
-     * Получает комментарий по идентификаторам пользователя и комментария.
+     * Получение конкретного комментария пользователя.
      *
      * @param userId    идентификатор пользователя
      * @param commentId идентификатор комментария
-     * @return DTO комментария
+     * @return DTO комментария с полными данными
      */
-    CommentDto get(Long userId, Long commentId);
+    CommentDto getUserComment(Long userId, Long commentId);
 
     /**
-     * Получает все комментарии указанного пользователя.
+     * Получение всех комментариев пользователя.
      *
      * @param userId идентификатор пользователя
-     * @return список DTO комментариев пользователя
+     * @return список комментариев
      */
-    List<CommentDto> getAll(Long userId);
+    List<CommentDto> getUserComments(Long userId);
 
     /**
-     * Создает новый комментарий к событию.
+     * Создание нового комментария к событию.
      *
-     * @param comment DTO с данными для создания комментария
-     * @return созданный DTO комментария
+     * @param userId  идентификатор автора
+     * @param eventId идентификатор события
+     * @param dto     данные для создания
+     * @return созданный комментарий
      */
-    CommentDto create(NewCommentDto comment);
+    CommentDto createComment(Long userId, Long eventId, NewCommentDto dto);
 
     /**
-     * Обновляет существующий комментарий.
+     * Обновление существующего комментария.
      *
-     * @param comment DTO с данными для обновления комментария
-     * @return обновленный DTO комментария
+     * @param userId    идентификатор автора
+     * @param commentId идентификатор комментария
+     * @param dto       данные для обновления
+     * @return обновлённый комментарий
      */
-    CommentDto update(UpdateCommentDto comment);
+    CommentDto updateComment(Long userId, Long commentId, UpdateCommentDto dto);
 
     /**
-     * Удаляет комментарий.
+     * Удаление комментария пользователем.
      *
-     * @param userId    идентификатор пользователя
+     * @param userId    идентификатор автора
      * @param commentId идентификатор комментария
      */
-    void delete(Long userId, Long commentId);
+    void deleteCommentByUser(Long userId, Long commentId);
 
     /**
-     * Получает все комментарии для указанного события.
-     * Доступно для всех пользователей без аутентификации.
+     * Удаление комментария администратором.
      *
-     * @param param параметры для выборки
-     * @return список DTO комментариев события, может быть пустым
+     * @param commentId идентификатор комментария
      */
-    List<CommentDto> getComments(CommentGetParam param);
+    void deleteCommentByAdmin(Long commentId);
+
+    /**
+     * Получение комментариев для события с фильтрацией и пагинацией.
+     *
+     * @param param параметры запроса (eventId, authorIds, сортировка, пагинация)
+     * @return список комментариев
+     */
+    List<CommentDto> getCommentsForEvent(CommentGetParam param);
 }

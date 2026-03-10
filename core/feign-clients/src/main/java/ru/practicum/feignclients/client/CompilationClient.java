@@ -5,23 +5,24 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import ru.practicum.compilation.dto.CompilationDto;
+import ru.practicum.config.FeignConfiguration;
 
 import java.util.List;
 
 /**
- * Feign-клиент для взаимодействия с микросервисом подборок (compilation-service).
- * Предоставляет методы для публичного API, так как подборки доступны для всех.
+ * Feign-клиент для взаимодействия с compilation-service.
+ * Предоставляет методы для получения подборок событий.
  */
-@FeignClient(name = "compilation-service", path = "/compilations")
+@FeignClient(name = "compilation-service", path = "/compilations", configuration = FeignConfiguration.class)
 public interface CompilationClient {
 
     /**
-     * Получить список подборок с возможностью фильтрации и пагинации.
+     * Получает список подборок с возможностью фильтрации по признаку закрепления.
      *
-     * @param pinned фильтр по закрепленным подборкам
-     * @param from   начальная позиция в списке
+     * @param pinned признак закреплённости (true/false)
+     * @param from   смещение для пагинации
      * @param size   количество элементов на странице
-     * @return список подборок событий
+     * @return список подборок
      */
     @GetMapping
     List<CompilationDto> getCompilations(@RequestParam(required = false) Boolean pinned,
@@ -29,10 +30,10 @@ public interface CompilationClient {
                                          @RequestParam(defaultValue = "10") Integer size);
 
     /**
-     * Получить подборку событий по идентификатору.
+     * Получает подборку по её идентификатору.
      *
      * @param compId идентификатор подборки
-     * @return подборка событий
+     * @return DTO подборки
      */
     @GetMapping("/{compId}")
     CompilationDto getCompilationById(@PathVariable("compId") Long compId);

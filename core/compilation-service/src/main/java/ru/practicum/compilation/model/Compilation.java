@@ -3,20 +3,22 @@ package ru.practicum.compilation.model;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * Сущность подборки событий.
  */
-@Builder(toBuilder = true)
-@Table(name = "compilations")
 @Entity
+@Table(name = "compilations")
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Compilation {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -39,5 +41,18 @@ public class Compilation {
     )
     @Column(name = "event_id")
     @Builder.Default
-    private Set<Long> eventIds = new HashSet<>();
+    private List<Long> eventIds = new ArrayList<>();
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Compilation that = (Compilation) o;
+        return id != null && Objects.equals(id, that.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
 }

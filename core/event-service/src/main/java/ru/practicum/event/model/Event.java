@@ -5,22 +5,23 @@ import lombok.*;
 import ru.practicum.event.util.State;
 
 import java.time.LocalDateTime;
-import java.util.Objects;
 
 /**
  * Сущность события.
  */
-@Builder(toBuilder = true)
-@Table(name = "events")
 @Entity
+@Table(name = "events")
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Event {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @EqualsAndHashCode.Include
     private Long id;
 
     @Column(nullable = false, length = 120)
@@ -73,21 +74,33 @@ public class Event {
 
     @Transient
     @Builder.Default
-    private Long views = 0L;
+    private Double rating = 0.0;
 
     @Transient
     @Builder.Default
     private Long confirmedRequests = 0L;
 
-    @Override
-    public boolean equals(Object o) {
-        if (o == null || getClass() != o.getClass()) return false;
-        Event event = (Event) o;
-        return Objects.equals(id, event.id);
+    /**
+     * Публикация события.
+     */
+    public void publish() {
+        this.state = State.PUBLISHED;
+        this.publishedOn = LocalDateTime.now();
     }
 
-    @Override
-    public int hashCode() {
-        return Objects.hashCode(id);
+    /**
+     * Отмена события.
+     */
+    public void cancel() {
+        if (this.state != State.PUBLISHED) {
+            this.state = State.CANCELED;
+        }
+    }
+
+    /**
+     * Отправка на модерацию.
+     */
+    public void sendToReview() {
+        this.state = State.PENDING;
     }
 }

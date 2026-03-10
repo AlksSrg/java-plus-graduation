@@ -4,7 +4,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import ru.practicum.category.model.Category;
 
-import java.util.Collection;
 import java.util.Optional;
 
 /**
@@ -14,19 +13,19 @@ import java.util.Optional;
 public interface CategoryRepository extends JpaRepository<Category, Long> {
 
     /**
-     * Находит категорию по имени (без учета регистра).
+     * Находит категорию по точному имени (без учета регистра).
      *
      * @param name имя категории
-     * @return категория
+     * @return Optional с категорией
      */
-    Optional<Category> findByNameContainingIgnoreCase(String name);
+    Optional<Category> findByNameIgnoreCase(String name);
 
     /**
-     * Находит категорию по имени, исключая указанные идентификаторы.
+     * Находит категорию по точному имени, исключая указанный идентификатор.
      *
-     * @param name имя категории
-     * @param ids  идентификаторы для исключения
-     * @return категория
+     * @param name       имя категории
+     * @param excludedId идентификатор, который нужно исключить
+     * @return Optional с категорией
      */
-    Optional<Category> findByNameContainingIgnoreCaseAndIdNotIn(String name, Collection<Long> ids);
+    Optional<Category> findByNameIgnoreCaseAndIdNot(String name, Long excludedId);
 }

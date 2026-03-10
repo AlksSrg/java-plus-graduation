@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package stats.service.dashboard;
+
+import "stats/messages/recommendation/user_predictions_request.proto";
+import "stats/messages/recommendation/similar_events_request.proto";
+import "stats/messages/recommendation/interactions_count_request.proto";
+import "stats/messages/recommendation/recommended_event.proto";
+
+option java_multiple_files = true;
+option java_package = "ru.practicum.grpc.stats.recommendation";
+
+/**
+ * gRPC сервис для получения рекомендаций и статистики.
+ */
+service RecommendationsController {
+  /**
+   * Возвращает поток персональных рекомендаций для пользователя.
+   */
+  rpc GetRecommendationsForUser(stats.messages.recommendation.UserPredictionsRequestProto)
+      returns (stream stats.messages.recommendation.RecommendedEventProto);
+
+  /**
+   * Возвращает поток мероприятий, похожих на указанное.
+   */
+  rpc GetSimilarEvents(stats.messages.recommendation.SimilarEventsRequestProto)
+      returns (stream stats.messages.recommendation.RecommendedEventProto);
+
+  /**
+   * Возвращает количество взаимодействий для запрошенных мероприятий.
+   */
+  rpc GetInteractionsCount(stats.messages.recommendation.InteractionsCountRequestProto)
+      returns (stream stats.messages.recommendation.RecommendedEventProto);
+}

@@ -1,44 +1,29 @@
 package ru.practicum.event.config;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cloud.client.discovery.DiscoveryClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.retry.support.RetryTemplate;
-import ru.practicum.StatsClient;
+import ru.practicum.ewm.client.RecommendationsClient;
+import ru.practicum.ewm.client.UserActionClient;
 
 /**
- * Конфигурация для StatsClient.
- * Обеспечивает создание бина StatsClient для взаимодействия со статистикой.
+ * Конфигурация для gRPC клиентов рекомендательного сервиса.
  */
 @Configuration
 public class StatsClientConfig {
 
-    @Value("${stats-client.id:stats-service}")
-    private String statsServerId;
-
     /**
-     * Создает бин StatsClient с использованием DiscoveryClient и RetryTemplate.
-     *
-     * @param discoveryClient клиент для обнаружения сервисов
-     * @param retryTemplate   шаблон для повторных попыток
-     * @return настроенный StatsClient
+     * Создает бин UserActionClient для отправки действий пользователей.
      */
     @Bean
-    public StatsClient statsClient(DiscoveryClient discoveryClient, RetryTemplate retryTemplate) {
-        return new StatsClient(statsServerId, discoveryClient, retryTemplate);
+    public UserActionClient userActionClient() {
+        return new UserActionClient();
     }
 
     /**
-     * Создает бин RetryTemplate для повторных попыток при сбоях.
-     *
-     * @return настроенный RetryTemplate
+     * Создает бин RecommendationsClient для получения рекомендаций.
      */
     @Bean
-    public RetryTemplate retryTemplate() {
-        return RetryTemplate.builder()
-                .maxAttempts(3)
-                .exponentialBackoff(1000, 2, 5000)
-                .build();
+    public RecommendationsClient recommendationsClient() {
+        return new RecommendationsClient();
     }
 }

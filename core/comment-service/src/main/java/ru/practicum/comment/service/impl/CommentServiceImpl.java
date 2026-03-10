@@ -1,6 +1,7 @@
 package ru.practicum.comment.service.impl;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -16,6 +17,7 @@ import ru.practicum.comment.repository.CommentRepository;
 import ru.practicum.comment.service.CommentService;
 import ru.practicum.comment.util.CommentGetParam;
 import ru.practicum.event.dto.EventFullDto;
+import ru.practicum.event.dto.EventShortDto;
 import ru.practicum.event.util.State;
 import ru.practicum.exception.ConflictResource;
 import ru.practicum.exception.ForbiddenException;
@@ -24,186 +26,163 @@ import ru.practicum.feignclients.client.EventClient;
 import ru.practicum.feignclients.client.UserClient;
 import ru.practicum.user.dto.UserDto;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Реализация сервиса для управления комментариями к событиям.
- * Предоставляет функциональность для создания, получения, обновления и удаления комментариев.
+ * Реализация сервиса комментариев.
  */
+@Slf4j
 @Service
-@Transactional(readOnly = true)
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class CommentServiceImpl implements CommentService {
+
     private final CommentRepository commentRepository;
     private final CommentMapper commentMapper;
     private final UserClient userClient;
     private final EventClient eventClient;
 
-    /**
-     * Получает комментарий по идентификаторам пользователя и комментария.
-     * Проверяет права доступа - только автор может просматривать свой комментарий.
-     *
-     * @param userId    идентификатор пользователя, должен быть положительным
-     * @param commentId идентификатор комментария, должен быть положительным
-     * @return DTO комментария
-     * @throws NotFoundResource  если комментарий с указанным ID не найден
-     * @throws ForbiddenException если пользователь не является автором комментария
-     */
     @Override
-    public CommentDto get(Long userId, Long commentId) {
+    public CommentDto getUserComment(Long userId, Long commentId) {
+        log.info("Запрос комментария userId={}, commentId={}", userId, commentId);
         userClient.getUserById(userId);
-
-        Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new NotFoundResource(
-                        String.format("Комментарий с id = %d не найден", commentId)));
-
+        Comment comment = findCommentById(commentId);
         if (!comment.getAuthorId().equals(userId)) {
-            throw new ForbiddenException("Просмотр комментария другого автора невозможен");
+            throw new ForbiddenException("Комментарий принадлежит другому пользователю");
         }
-
-        return commentMapper.toDto(comment);
+        return enrichCommentDto(comment);
     }
 
-    /**
-     * Получает все комментарии указанного пользователя.
-     *
-     * @param userId идентификатор пользователя, должен быть положительным
-     * @return список DTO комментариев пользователя, может быть пустым
-     */
     @Override
-    public List<CommentDto> getAll(Long userId) {
+    public List<CommentDto> getUserComments(Long userId) {
+        log.info("Запрос всех комментариев пользователя userId={}", userId);
         userClient.getUserById(userId);
-
         return commentRepository.findAllByAuthorId(userId).stream()
-                .map(commentMapper::toDto)
+                .map(this::enrichCommentDto)
                 .toList();
     }
 
-    /**
-     * Создает новый комментарий к событию.
-     * Проверяет возможность комментирования (событие должно быть опубликовано,
-     * пользователь не должен иметь существующего комментария к этому событию).
-     *
-     * @param newCommentDto DTO с данными для создания комментария
-     * @return созданный DTO комментария
-     * @throws ConflictResource если событие не опубликовано или комментарий уже существует
-     */
     @Override
     @Transactional
-    public CommentDto create(NewCommentDto newCommentDto) {
-        // Проверяем, существует ли пользователь
-        UserDto author = userClient.getUserById(newCommentDto.getAuthorId());
+    public CommentDto createComment(Long userId, Long eventId, NewCommentDto dto) {
+        log.info("Создание комментария: userId={}, eventId={}", userId, eventId);
 
-        // Проверяем, существует ли событие
-        EventFullDto event = eventClient.getEventById(newCommentDto.getEventId());
+        UserDto author = userClient.getUserById(userId);
+        EventFullDto event = eventClient.getEventById(eventId);
 
-        // Проверяем статус события
-        if (!State.PUBLISHED.equals(event.getState())) {
-            throw new ConflictResource("Комментировать можно только опубликованное событие");
+        if (event.state() != State.PUBLISHED) {
+            throw new ConflictResource("Нельзя комментировать неопубликованное событие");
         }
 
-        // Проверяем, не оставлял ли пользователь уже комментарий к этому событию
-        if (commentRepository.existsByAuthorIdAndEventId(newCommentDto.getAuthorId(), newCommentDto.getEventId())) {
-            throw new ConflictResource("Пользователь уже оставил комментарий к данному событию");
+        if (commentRepository.existsByAuthorIdAndEventId(userId, eventId)) {
+            throw new ConflictResource("Пользователь уже оставил комментарий к этому событию");
         }
 
-        Comment newComment = commentMapper.toEntity(newCommentDto, newCommentDto.getAuthorId());
-        Comment savedComment = commentRepository.save(newComment);
+        Comment comment = commentMapper.toEntity(dto);
+        comment.setAuthorId(userId);
+        comment.setEventId(eventId);
+        comment.setCreated(LocalDateTime.now());
 
-        return commentMapper.toDto(savedComment);
+        Comment saved = commentRepository.save(comment);
+        return enrichCommentDto(saved);
     }
 
-    /**
-     * Обновляет существующий комментарий.
-     * Проверяет права доступа - только автор может редактировать комментарий.
-     *
-     * @param updateCommentDto DTO с данными для обновления комментария
-     * @return обновленный DTO комментария
-     * @throws NotFoundResource  если комментарий с указанным ID не найден
-     * @throws ForbiddenException если пользователь не является автором комментария
-     */
     @Override
     @Transactional
-    public CommentDto update(UpdateCommentDto updateCommentDto) {
-        userClient.getUserById(updateCommentDto.getAuthorId());
+    public CommentDto updateComment(Long userId, Long commentId, UpdateCommentDto dto) {
+        log.info("Обновление комментария: userId={}, commentId={}", userId, commentId);
 
-        Comment existingComment = commentRepository.findById(updateCommentDto.getCommentId())
-                .orElseThrow(() -> new NotFoundResource(
-                        String.format("Комментарий с id = %d не найден", updateCommentDto.getCommentId())));
-
-        if (!existingComment.getAuthorId().equals(updateCommentDto.getAuthorId())) {
-            throw new ForbiddenException("Редактирование комментария другого автора невозможно");
-        }
-
-        commentMapper.updateEntity(existingComment, updateCommentDto);
-        Comment updatedComment = commentRepository.save(existingComment);
-
-        return commentMapper.toDto(updatedComment);
-    }
-
-    /**
-     * Удаляет комментарий.
-     * Проверяет права доступа - только автор может удалить комментарий.
-     *
-     * @param userId    идентификатор пользователя, должен быть положительным
-     * @param commentId идентификатор комментария, должен быть положительным
-     * @throws NotFoundResource  если комментарий с указанным ID не найден
-     * @throws ForbiddenException если пользователь не является автором комментария
-     */
-    @Override
-    @Transactional
-    public void delete(Long userId, Long commentId) {
         userClient.getUserById(userId);
-
-        Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new NotFoundResource(
-                        String.format("Комментарий с id = %d не найден", commentId)));
+        Comment comment = findCommentById(commentId);
 
         if (!comment.getAuthorId().equals(userId)) {
-            throw new ForbiddenException("Удаление комментария другого автора невозможно");
+            throw new ForbiddenException("Нельзя редактировать чужой комментарий");
+        }
+
+        commentMapper.updateEntityFromDto(dto, comment);
+        Comment updated = commentRepository.save(comment);
+        return enrichCommentDto(updated);
+    }
+
+    @Override
+    @Transactional
+    public void deleteCommentByUser(Long userId, Long commentId) {
+        log.info("Удаление комментария пользователем: userId={}, commentId={}", userId, commentId);
+
+        userClient.getUserById(userId);
+        Comment comment = findCommentById(commentId);
+
+        if (!comment.getAuthorId().equals(userId)) {
+            throw new ForbiddenException("Нельзя удалить чужой комментарий");
         }
 
         commentRepository.delete(comment);
     }
 
-    /**
-     * Получает все комментарии для указанного события.
-     * Используется для публичного доступа к комментариям события.
-     *
-     * @param param параметры выборки
-     * @return список DTO комментариев события, может быть пустым
-     */
     @Override
-    public List<CommentDto> getComments(CommentGetParam param) {
-        // Проверяем существование события
+    @Transactional
+    public void deleteCommentByAdmin(Long commentId) {
+        log.info("Удаление комментария администратором: commentId={}", commentId);
+
+        Comment comment = findCommentById(commentId);
+        commentRepository.delete(comment);
+    }
+
+    @Override
+    public List<CommentDto> getCommentsForEvent(CommentGetParam param) {
+        log.info("Запрос комментариев для события eventId={}", param.getEventId());
+
         eventClient.getEventById(param.getEventId());
 
-        Sort sort = null;
-        Pageable pageable;
+        Specification<Comment> spec = Specification.where(byEventId(param.getEventId()));
 
+        if (param.getAuthorIds() != null && !param.getAuthorIds().isEmpty()) {
+            spec = spec.and(byAuthorIds(param.getAuthorIds()));
+        }
+
+        Sort sort = Sort.by(Sort.Direction.DESC, "created");
         if (param.getSortBy() != null) {
             sort = switch (param.getSortBy()) {
-                case AUTHOR -> Sort.by("authorId");
                 case CREATED -> Sort.by(Sort.Direction.DESC, "created");
+                case AUTHOR -> Sort.by("authorId");
             };
         }
 
-        int page = param.getFrom() / param.getSize();
-        if (sort == null) {
-            pageable = PageRequest.of(page, param.getSize());
-        } else {
-            pageable = PageRequest.of(page, param.getSize(), sort);
-        }
-
-        Specification<Comment> specification = Specification.where(byEventId(param.getEventId()));
-
-        if (param.getAuthorIds() != null && !param.getAuthorIds().isEmpty()) {
-            specification = specification.and(byAuthorIds(param.getAuthorIds()));
-        }
-
-        return commentRepository.findAll(specification, pageable).stream()
-                .map(commentMapper::toDto)
+        Pageable pageable = PageRequest.of(param.getFrom() / param.getSize(), param.getSize(), sort);
+        return commentRepository.findAll(spec, pageable).stream()
+                .map(this::enrichCommentDto)
                 .toList();
+    }
+
+    private Comment findCommentById(Long commentId) {
+        return commentRepository.findById(commentId)
+                .orElseThrow(() -> new NotFoundResource("Комментарий с id " + commentId + " не найден"));
+    }
+
+    private CommentDto enrichCommentDto(Comment comment) {
+        UserDto author = userClient.getUserById(comment.getAuthorId());
+        EventFullDto eventFull = eventClient.getEventById(comment.getEventId());
+        EventShortDto eventShort = mapEventFullToShort(eventFull);
+
+        CommentDto dto = commentMapper.toDto(comment);
+        dto.setAuthor(author);
+        dto.setEvent(eventShort);
+        return dto;
+    }
+
+    private EventShortDto mapEventFullToShort(EventFullDto full) {
+        return EventShortDto.builder()
+                .id(full.id())
+                .annotation(full.annotation())
+                .category(full.category())
+                .confirmedRequests(full.confirmedRequests())
+                .eventDate(full.eventDate())
+                .initiator(full.initiator())
+                .paid(full.paid())
+                .title(full.title())
+                .views(0L) // поле отсутствует в EventFullDto, устанавливаем 0
+                .build();
     }
 
     private Specification<Comment> byEventId(Long eventId) {

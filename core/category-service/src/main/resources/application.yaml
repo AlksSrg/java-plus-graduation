@@ -17,6 +17,9 @@ spring:
     url: jdbc:postgresql://localhost:8032/main?currentSchema=category_schema
     username: main
     password: main
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
   jpa:
     hibernate:
       ddl-auto: none
@@ -30,6 +33,8 @@ spring:
     init:
       mode: always
       schema-locations: classpath:schema.sql
+  main:
+    allow-bean-definition-overriding: true
 
 server:
   port: 0
@@ -42,6 +47,7 @@ eureka:
     register-with-eureka: true
   instance:
     prefer-ip-address: true
+    hostname: localhost
     instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
 
 feign:
@@ -56,3 +62,5 @@ logging:
   level:
     ru.practicum: DEBUG
     org.springframework.cloud.openfeign: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE

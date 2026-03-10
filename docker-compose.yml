@@ -1,31 +1,185 @@
 services:
-
-  stats-db:
+  # Базы данных для микросервисов
+  category-db:
     image: postgres:16.1
-    container_name: postgres_stats_db
+    container_name: postgres-category-service-db
     ports:
-      - "9032:5432"
+      - "6543:5432"
     environment:
-      - POSTGRES_DB=stats
-      - POSTGRES_USER=stats
-      - POSTGRES_PASSWORD=stats
+      - POSTGRES_DB=category_service
+      - POSTGRES_USER=localuser
+      - POSTGRES_PASSWORD=localpass
     healthcheck:
       test: pg_isready -q -d $$POSTGRES_DB -U $$POSTGRES_USER
       timeout: 5s
       interval: 5s
       retries: 10
+    networks:
+      - ewm-network
 
-  ewm-db:
+  comments-db:
     image: postgres:16.1
-    container_name: postgres_ewn_db
-    environment:
-      - POSTGRES_PASSWORD=main
-      - POSTGRES_USER=main
-      - POSTGRES_DB=main
+    container_name: postgres-comments-service-db
     ports:
-      - "8032:5432"
+      - "6544:5432"
+    environment:
+      - POSTGRES_DB=comments_service
+      - POSTGRES_USER=localuser
+      - POSTGRES_PASSWORD=localpass
     healthcheck:
       test: pg_isready -q -d $$POSTGRES_DB -U $$POSTGRES_USER
       timeout: 5s
       interval: 5s
       retries: 10
+    networks:
+      - ewm-network
+
+  compilation-db:
+    image: postgres:16.1
+    container_name: postgres-compilation-service-db
+    ports:
+      - "6545:5432"
+    environment:
+      - POSTGRES_DB=compilation_service
+      - POSTGRES_USER=localuser
+      - POSTGRES_PASSWORD=localpass
+    healthcheck:
+      test: pg_isready -q -d $$POSTGRES_DB -U $$POSTGRES_USER
+      timeout: 5s
+      interval: 5s
+      retries: 10
+    networks:
+      - ewm-network
+
+  event-db:
+    image: postgres:16.1
+    container_name: postgres-event-service-db
+    ports:
+      - "6546:5432"
+    environment:
+      - POSTGRES_DB=event_service
+      - POSTGRES_USER=localuser
+      - POSTGRES_PASSWORD=localpass
+    healthcheck:
+      test: pg_isready -q -d $$POSTGRES_DB -U $$POSTGRES_USER
+      timeout: 5s
+      interval: 5s
+      retries: 10
+    networks:
+      - ewm-network
+
+  user-db:
+    image: postgres:16.1
+    container_name: postgres-user-service-db
+    ports:
+      - "6547:5432"
+    environment:
+      - POSTGRES_DB=user_service
+      - POSTGRES_USER=localuser
+      - POSTGRES_PASSWORD=localpass
+    healthcheck:
+      test: pg_isready -q -d $$POSTGRES_DB -U $$POSTGRES_USER
+      timeout: 5s
+      interval: 5s
+      retries: 10
+    networks:
+      - ewm-network
+
+  request-db:
+    image: postgres:16.1
+    container_name: postgres-request-service-db
+    ports:
+      - "6548:5432"
+    environment:
+      - POSTGRES_DB=request_service
+      - POSTGRES_USER=localuser
+      - POSTGRES_PASSWORD=localpass
+    healthcheck:
+      test: pg_isready -q -d $$POSTGRES_DB -U $$POSTGRES_USER
+      timeout: 5s
+      interval: 5s
+      retries: 10
+    networks:
+      - ewm-network
+
+  analyzer-db:
+    image: postgres:16.1
+    container_name: postgres-ewm-analyzer-db
+    ports:
+      - "6542:5432"
+    environment:
+      - POSTGRES_DB=analyzer_server
+      - POSTGRES_USER=localuser
+      - POSTGRES_PASSWORD=localpass
+    healthcheck:
+      test: pg_isready -q -d $$POSTGRES_DB -U $$POSTGRES_USER
+      timeout: 5s
+      interval: 5s
+      retries: 10
+    networks:
+      - ewm-network
+
+  # Zookeeper для Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: ewm-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - ewm-network
+
+  # Kafka брокер
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: ewm-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - ewm-network
+
+  # Schema Registry (для Avro)
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.3.0
+    container_name: ewm-schema-registry
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    networks:
+      - ewm-network
+
+  # Инициализация топиков (выполняется один раз при старте)
+  kafka-init-topics:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: kafka-init-topics
+    depends_on:
+      - kafka
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: |
+      "
+      cub kafka-ready -b kafka:9092 1 20
+      kafka-topics --create --topic stats.user-actions.v1 --partitions 1 --replication-factor 1 --if-not-exists --bootstrap-server kafka:9092
+      kafka-topics --create --topic stats.events-similarity.v1 --partitions 1 --replication-factor 1 --if-not-exists --bootstrap-server kafka:9092
+      echo "Topics created."
+      "
+    networks:
+      - ewm-network
+
+networks:
+  ewm-network:
+    driver: bridge

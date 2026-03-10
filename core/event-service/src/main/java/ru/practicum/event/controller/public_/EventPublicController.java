@@ -6,9 +6,9 @@ import jakarta.validation.constraints.PositiveOrZero;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-import ru.practicum.StatsClient;
 import ru.practicum.event.dto.EventFullDto;
 import ru.practicum.event.dto.EventShortDto;
 import ru.practicum.event.service.EventService;
@@ -16,12 +16,11 @@ import ru.practicum.event.util.EventGetPublicParam;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * Публичный контроллер для работы с событиями.
- * Предоставляет API для получения информации о событиях без аутентификации.
+ * Предоставляет API для получения информации о событиях без аутентификации,
+ * а также для лайков и рекомендаций (с идентификатором пользователя в заголовке).
  */
 @Slf4j
 @Validated
@@ -31,11 +30,8 @@ import java.util.concurrent.Executors;
 public class EventPublicController {
 
     private static final String DATE_TIME_FORMAT = "yyyy-MM-dd HH:mm:ss";
-    private static final String APP_NAME = "event-service";
 
     private final EventService eventService;
-    private final StatsClient statsClient;
-    private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     /**
      * Получает список событий с возможностью фильтрации и пагинации.
@@ -46,10 +42,10 @@ public class EventPublicController {
      * @param rangeStart    дата и время не раньше которых должно произойти событие
      * @param rangeEnd      дата и время не позже которых должно произойти событие
      * @param onlyAvailable только события с непросроченным лимитом запросов
-     * @param sort          способ сортировки: EVENT_DATE или VIEWS
+     * @param sort          способ сортировки: EVENT_DATE или RATING
      * @param from          количество событий, которые нужно пропустить для формирования текущего набора
      * @param size          количество событий в наборе
-     * @param request       HTTP-запрос для сбора статистики
+     * @param request       HTTP-запрос для сбора статистики (используется для логирования)
      * @return список событий
      */
     @GetMapping
@@ -83,97 +79,53 @@ public class EventPublicController {
                 .size(size)
                 .build();
 
-        List<EventShortDto> events = eventService.getEventsByPublic(param);
-
-        // Сохраняем статистику асинхронно
-        executorService.submit(() -> {
-            try {
-                boolean saved = statsClient.saveStat(APP_NAME, request.getRequestURI(), request.getRemoteAddr());
-                if (!saved) {
-                    log.warn("Failed to save stats for URI: {}", request.getRequestURI());
-                }
-            } catch (Exception e) {
-                log.error("Error saving stats for URI: {}", request.getRequestURI(), e);
-            }
-        });
-
-        return events;
+        return eventService.getEventsByPublic(param);
     }
 
     /**
      * Получает подробную информацию о событии по его идентификатору.
      *
      * @param id      идентификатор события
+     * @param userId  идентификатор пользователя из заголовка (может отсутствовать)
      * @param request HTTP-запрос для сбора статистики
      * @return подробная информация о событии
      */
     @GetMapping("/{id}")
     public EventFullDto getEvent(@PathVariable @Positive long id,
+                                 @RequestHeader(value = "X-EWM-USER-ID", required = false) Long userId,
                                  HttpServletRequest request) {
-        log.info("GET /events/{}", id);
-
-        EventFullDto eventFullDto = eventService.getEventByPublic(id);
-
-        // Сохраняем статистику асинхронно
-        executorService.submit(() -> {
-            try {
-                boolean saved = statsClient.saveStat(APP_NAME, request.getRequestURI(), request.getRemoteAddr());
-                if (!saved) {
-                    log.warn("Failed to save stats for URI: {}", request.getRequestURI());
-                }
-            } catch (Exception e) {
-                log.error("Error saving stats for URI: {}", request.getRequestURI(), e);
-            }
-        });
-
-        return eventFullDto;
+        log.info("GET /events/{} by user {}", id, userId);
+        return eventService.getEventByPublic(id);
     }
 
     /**
-     * Получает краткую информацию о событии по его идентификатору для внутренних вызовов.
+     * Получает рекомендации мероприятий для пользователя.
      *
-     * @param eventId идентификатор события
-     * @return краткая информация о событии
+     * @param userId     идентификатор пользователя из заголовка
+     * @param maxResults максимальное количество рекомендаций
+     * @return список рекомендуемых событий
      */
-    @GetMapping("/{eventId}/short")
-    public EventShortDto getEventShortById(@PathVariable Long eventId) {
-        log.info("Internal call: GET /events/{}/short", eventId);
-        return eventService.getEventShortById(eventId);
+    @GetMapping("/recommendations")
+    public List<EventShortDto> getRecommendations(
+            @RequestHeader("X-EWM-USER-ID") Long userId,
+            @RequestParam(defaultValue = "10") @Positive int maxResults) {
+
+        log.info("GET /events/recommendations for user {} with maxResults {}", userId, maxResults);
+        return eventService.getRecommendations(userId, maxResults);
     }
 
     /**
-     * Получает список событий по их идентификаторам для внутренних вызовов.
+     * Ставит лайк мероприятию.
      *
-     * @param ids список идентификаторов событий
-     * @return список краткой информации о событиях
+     * @param eventId идентификатор мероприятия
+     * @param userId  идентификатор пользователя из заголовка
      */
-    @GetMapping("/by-ids")
-    public List<EventShortDto> getEventsByIds(@RequestParam List<Long> ids) {
-        log.info("Internal call: GET /events/by-ids with ids: {}", ids);
-        return eventService.getEventsByIds(ids);
-    }
+    @PutMapping("/{eventId}/like")
+    @ResponseStatus(HttpStatus.OK)
+    public void likeEvent(@PathVariable @Positive Long eventId,
+                          @RequestHeader("X-EWM-USER-ID") Long userId) {
 
-    /**
-     * Проверяет существование события по его идентификатору для внутренних вызовов.
-     *
-     * @param eventId идентификатор события
-     * @return true если событие существует
-     */
-    @GetMapping("/{eventId}/exists")
-    public Boolean existsEventById(@PathVariable Long eventId) {
-        log.info("Internal call: GET /events/{}/exists", eventId);
-        return eventService.existsEventById(eventId);
-    }
-
-    /**
-     * Проверяет, существуют ли события с указанной категорией для внутренних вызовов.
-     *
-     * @param categoryId идентификатор категории
-     * @return true если есть события с данной категорией
-     */
-    @GetMapping("/by-category/{categoryId}/exists")
-    public Boolean existsByCategoryId(@PathVariable Long categoryId) {
-        log.info("Internal call: GET /events/by-category/{}/exists", categoryId);
-        return eventService.existsByCategoryId(categoryId);
+        log.info("PUT /events/{}/like by user {}", eventId, userId);
+        eventService.addLike(userId, eventId);
     }
 }

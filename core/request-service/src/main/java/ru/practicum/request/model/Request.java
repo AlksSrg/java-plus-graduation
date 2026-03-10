@@ -5,21 +5,24 @@ import lombok.*;
 import ru.practicum.request.util.Status;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 /**
  * Сущность запроса на участие в событии.
  */
-@Builder
-@Table(name = "requests")
 @Entity
+@Table(name = "requests")
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Request {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @EqualsAndHashCode.Include
     private Long id;
 
     @Column(nullable = false)
@@ -35,15 +38,24 @@ public class Request {
     @Column(nullable = false, length = 20)
     private Status status;
 
-    @Override
-    public boolean equals(Object o) {
-        if (o == null || getClass() != o.getClass()) return false;
-        Request request = (Request) o;
-        return id != null && id.equals(request.id);
+    /**
+     * Подтверждает запрос (устанавливает статус CONFIRMED).
+     */
+    public void confirm() {
+        this.status = Status.CONFIRMED;
     }
 
-    @Override
-    public int hashCode() {
-        return getClass().hashCode();
+    /**
+     * Отклоняет запрос (устанавливает статус REJECTED).
+     */
+    public void reject() {
+        this.status = Status.REJECTED;
+    }
+
+    /**
+     * Отменяет запрос (устанавливает статус CANCELED).
+     */
+    public void cancel() {
+        this.status = Status.CANCELED;
     }
 }

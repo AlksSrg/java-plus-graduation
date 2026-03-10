@@ -1,55 +1,71 @@
 package ru.practicum.user.service;
 
+import org.springframework.data.domain.Pageable;
 import ru.practicum.user.dto.NewUserRequest;
 import ru.practicum.user.dto.UserDto;
+import ru.practicum.user.dto.UserShortDto;
 import ru.practicum.user.model.User;
-import ru.practicum.user.util.UserGetParam;
 
 import java.util.List;
 
 /**
  * Сервис для работы с пользователями.
- * <p>
- * Определяет контракт для операций управления пользователями.
  */
 public interface UserService {
 
     /**
-     * Получает перечень пользователей с учетом параметров фильтрации и пагинации.
+     * Создаёт нового пользователя.
      *
-     * @param userGetParam параметры запроса (фильтрация и пагинация)
-     * @return список DTO пользователей
+     * @param request данные для создания
+     * @return созданный пользователь
      */
-    List<UserDto> getUsers(UserGetParam userGetParam);
+    UserDto createUser(NewUserRequest request);
+
+    /**
+     * Получает список пользователей с фильтрацией по идентификаторам и пагинацией.
+     *
+     * @param ids      список идентификаторов (если null или пусто – все пользователи)
+     * @param pageable параметры пагинации
+     * @return список пользователей
+     */
+    List<UserDto> getUsers(List<Long> ids, Pageable pageable);
+
+    /**
+     * Удаляет пользователя по идентификатору.
+     *
+     * @param userId идентификатор
+     */
+    void deleteUser(Long userId);
 
     /**
      * Получает пользователя по идентификатору.
      *
-     * @param userId идентификатор пользователя
+     * @param userId идентификатор
      * @return сущность пользователя
      */
     User getUserById(Long userId);
 
     /**
+     * Получает пользователя по идентификатору или выбрасывает исключение.
+     *
+     * @param userId идентификатор
+     * @return сущность пользователя
+     */
+    User getUserByIdOrThrow(Long userId);
+
+    /**
      * Получает DTO пользователя по идентификатору.
      *
-     * @param userId идентификатор пользователя
+     * @param userId идентификатор
      * @return DTO пользователя
      */
     UserDto getUserDtoById(Long userId);
 
     /**
-     * Создает нового пользователя.
+     * Получает краткое DTO пользователя по идентификатору.
      *
-     * @param newUserRequest данные для создания пользователя
-     * @return DTO созданного пользователя
+     * @param userId идентификатор
+     * @return краткое DTO
      */
-    UserDto createUser(NewUserRequest newUserRequest);
-
-    /**
-     * Удаляет пользователя по идентификатору.
-     *
-     * @param userId идентификатор пользователя
-     */
-    void deleteUser(Long userId);
+    UserShortDto getUserShortDtoById(Long userId);
 }

@@ -3,7 +3,9 @@ package ru.practicum.compilation.service.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.compilation.dto.CompilationDto;
@@ -12,25 +14,28 @@ import ru.practicum.compilation.dto.UpdateCompilationRequest;
 import ru.practicum.compilation.mapper.CompilationMapper;
 import ru.practicum.compilation.model.Compilation;
 import ru.practicum.compilation.repository.CompilationRepository;
+import ru.practicum.compilation.service.CompilationService;
 import ru.practicum.event.dto.EventShortDto;
 import ru.practicum.exception.ConflictResource;
 import ru.practicum.exception.NotFoundResource;
 import ru.practicum.feignclients.client.EventClient;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
  * Реализация сервиса для работы с подборками событий.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Slf4j
 @Transactional(readOnly = true)
-public class CompilationServiceImpl implements ru.practicum.compilation.service.CompilationService {
+public class CompilationServiceImpl implements CompilationService {
 
     private final CompilationRepository compilationRepository;
     private final EventClient eventClient;
+    private final CompilationMapper compilationMapper;
 
     @Override
     @Transactional
@@ -41,7 +46,12 @@ public class CompilationServiceImpl implements ru.practicum.compilation.service.
             throw new ConflictResource("Compilation with title '" + newCompilationDto.getTitle() + "' already exists");
         }
 
-        Compilation compilation = CompilationMapper.toEntity(newCompilationDto);
+        Compilation compilation = compilationMapper.toEntity(newCompilationDto);
+
+        // Дополнительная защита от null (если маппер по какой-то причине не сработает)
+        if (compilation.getPinned() == null) {
+            compilation.setPinned(false);
+        }
 
         // Проверяем существование событий через EventClient
         if (newCompilationDto.getEvents() != null && !newCompilationDto.getEvents().isEmpty()) {
@@ -55,21 +65,21 @@ public class CompilationServiceImpl implements ru.practicum.compilation.service.
                 throw new NotFoundResource("Events with ids=" + notFoundIds + " were not found");
             }
 
-            compilation.setEventIds(new HashSet<>(eventIds));
+            compilation.setEventIds(eventIds);
         } else {
-            compilation.setEventIds(new HashSet<>());
+            compilation.setEventIds(new ArrayList<>());
         }
 
         try {
             Compilation savedCompilation = compilationRepository.save(compilation);
-            log.info("Compilation created successfully with id: {}", savedCompilation.getId());
+            log.info("Compilation created successfully with id: {}, pinned: {}",
+                    savedCompilation.getId(), savedCompilation.getPinned());
 
-            // Получаем полные данные о событиях для ответа
             List<EventShortDto> events = savedCompilation.getEventIds().isEmpty()
                     ? Collections.emptyList()
                     : eventClient.getEventsByIds(new ArrayList<>(savedCompilation.getEventIds()));
 
-            return CompilationMapper.toDto(savedCompilation, events);
+            return compilationMapper.toDto(savedCompilation, events);
         } catch (DataIntegrityViolationException e) {
             throw new ConflictResource("Compilation creation failed due to data integrity violation");
         }
@@ -80,10 +90,11 @@ public class CompilationServiceImpl implements ru.practicum.compilation.service.
     public void deleteCompilation(Long compId) {
         log.info("Deleting compilation with id: {}", compId);
 
-        Compilation compilation = compilationRepository.findById(compId)
-                .orElseThrow(() -> new NotFoundResource("Compilation with id=" + compId + " was not found"));
+        if (!compilationRepository.existsById(compId)) {
+            throw new NotFoundResource("Compilation with id=" + compId + " was not found");
+        }
 
-        compilationRepository.delete(compilation);
+        compilationRepository.deleteById(compId);
         log.info("Compilation with id: {} deleted successfully", compId);
     }
 
@@ -92,24 +103,20 @@ public class CompilationServiceImpl implements ru.practicum.compilation.service.
     public CompilationDto updateCompilation(Long compId, UpdateCompilationRequest updateRequest) {
         log.info("Updating compilation with id: {}", compId);
 
-        Compilation compilation = compilationRepository.findById(compId)
-                .orElseThrow(() -> new NotFoundResource("Compilation with id=" + compId + " was not found"));
+        Compilation compilation = getCompilationOrThrow(compId);
 
         if (updateRequest.getTitle() != null && !updateRequest.getTitle().isBlank()) {
             if (!compilation.getTitle().equals(updateRequest.getTitle()) &&
                     compilationRepository.existsByTitle(updateRequest.getTitle())) {
                 throw new ConflictResource("Compilation with title '" + updateRequest.getTitle() + "' already exists");
             }
-            compilation.setTitle(updateRequest.getTitle());
-        }
-
-        if (updateRequest.getPinned() != null) {
-            compilation.setPinned(updateRequest.getPinned());
         }
 
         // Обновляем список событий через EventClient
         if (updateRequest.getEvents() != null) {
-            if (!updateRequest.getEvents().isEmpty()) {
+            if (updateRequest.getEvents().isEmpty()) {
+                compilation.setEventIds(new ArrayList<>());
+            } else {
                 List<EventShortDto> events = eventClient.getEventsByIds(updateRequest.getEvents());
                 if (events.size() != updateRequest.getEvents().size()) {
                     Set<Long> foundIds = events.stream().map(EventShortDto::getId).collect(Collectors.toSet());
@@ -117,20 +124,21 @@ public class CompilationServiceImpl implements ru.practicum.compilation.service.
                     notFoundIds.removeAll(foundIds);
                     throw new NotFoundResource("Events with ids=" + notFoundIds + " were not found");
                 }
+                compilation.setEventIds(updateRequest.getEvents());
             }
-            compilation.setEventIds(new HashSet<>(updateRequest.getEvents()));
         }
+
+        compilationMapper.updateEntityFromRequest(updateRequest, compilation);
 
         try {
             Compilation updatedCompilation = compilationRepository.save(compilation);
             log.info("Compilation with id: {} updated successfully", compId);
 
-            // Получаем полные данные о событиях для ответа
             List<EventShortDto> events = updatedCompilation.getEventIds().isEmpty()
                     ? Collections.emptyList()
                     : eventClient.getEventsByIds(new ArrayList<>(updatedCompilation.getEventIds()));
 
-            return CompilationMapper.toDto(updatedCompilation, events);
+            return compilationMapper.toDto(updatedCompilation, events);
         } catch (DataIntegrityViolationException e) {
             throw new ConflictResource("Compilation update failed due to data integrity violation");
         }
@@ -140,51 +148,68 @@ public class CompilationServiceImpl implements ru.practicum.compilation.service.
     public List<CompilationDto> getCompilations(Boolean pinned, Pageable pageable) {
         log.info("Getting compilations with pinned={}, pageable={}", pinned, pageable);
 
-        List<Compilation> compilations;
-        if (pinned != null) {
-            compilations = compilationRepository.findAllByPinned(pinned, pageable).getContent();
-        } else {
-            compilations = compilationRepository.findAll(pageable).getContent();
+        // Сортировка по id для стабильной пагинации
+        Pageable sortedPageable = PageRequest.of(
+                pageable.getPageNumber(),
+                pageable.getPageSize(),
+                Sort.by("id").ascending()
+        );
+
+        List<Long> ids = compilationRepository.findIdsByPinned(pinned, sortedPageable);
+
+        if (ids.isEmpty()) {
+            return Collections.emptyList();
         }
 
-        // Собираем все ID событий из всех подборок
-        Set<Long> allEventIds = compilations.stream()
+        List<Compilation> compilations = compilationRepository.findAllByIdIn(ids);
+
+        // Восстанавливаем порядок согласно отсортированным ID
+        Map<Long, Compilation> compilationMap = compilations.stream()
+                .collect(Collectors.toMap(Compilation::getId, Function.identity()));
+        List<Compilation> orderedCompilations = ids.stream()
+                .map(compilationMap::get)
+                .filter(Objects::nonNull)
+                .toList();
+
+        // Собираем все ID событий из всех подборок для одного запроса
+        Set<Long> allEventIds = orderedCompilations.stream()
                 .flatMap(c -> c.getEventIds().stream())
                 .collect(Collectors.toSet());
 
-        // Получаем все события одним запросом (решаем проблему N+1)
         Map<Long, EventShortDto> eventsMap;
         if (!allEventIds.isEmpty()) {
             List<EventShortDto> events = eventClient.getEventsByIds(new ArrayList<>(allEventIds));
-            eventsMap = events.stream().collect(Collectors.toMap(EventShortDto::getId, e -> e));
+            eventsMap = events.stream().collect(Collectors.toMap(EventShortDto::getId, Function.identity()));
         } else {
             eventsMap = new HashMap<>();
         }
 
-        // Маппим каждую подборку с ее событиями
-        return compilations.stream()
+        return orderedCompilations.stream()
                 .map(compilation -> {
                     List<EventShortDto> compilationEvents = compilation.getEventIds().stream()
                             .map(eventsMap::get)
                             .filter(Objects::nonNull)
-                            .collect(Collectors.toList());
-                    return CompilationMapper.toDto(compilation, compilationEvents);
+                            .toList();
+                    return compilationMapper.toDto(compilation, compilationEvents);
                 })
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
     public CompilationDto getCompilationById(Long compId) {
         log.info("Getting compilation by id: {}", compId);
 
-        Compilation compilation = compilationRepository.findById(compId)
-                .orElseThrow(() -> new NotFoundResource("Compilation with id=" + compId + " was not found"));
+        Compilation compilation = getCompilationOrThrow(compId);
 
-        // Получаем данные о событиях через EventClient
         List<EventShortDto> events = compilation.getEventIds().isEmpty()
                 ? Collections.emptyList()
                 : eventClient.getEventsByIds(new ArrayList<>(compilation.getEventIds()));
 
-        return CompilationMapper.toDto(compilation, events);
+        return compilationMapper.toDto(compilation, events);
+    }
+
+    private Compilation getCompilationOrThrow(Long compId) {
+        return compilationRepository.findById(compId)
+                .orElseThrow(() -> new NotFoundResource("Compilation with id=" + compId + " was not found"));
     }
 }

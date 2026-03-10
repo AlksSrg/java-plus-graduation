@@ -1,6 +1,8 @@
 package ru.practicum.category.mapper;
 
-import lombok.experimental.UtilityClass;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+import org.mapstruct.MappingTarget;
 import ru.practicum.category.dto.CategoryDto;
 import ru.practicum.category.dto.NewCategoryDto;
 import ru.practicum.category.model.Category;
@@ -8,24 +10,8 @@ import ru.practicum.category.model.Category;
 /**
  * Маппер для преобразования между сущностью Category и DTO.
  */
-@UtilityClass
-public class CategoryMapper {
-
-    /**
-     * Преобразует сущность в DTO.
-     *
-     * @param category сущность категории
-     * @return DTO категории
-     */
-    public CategoryDto toDto(Category category) {
-        if (category == null) {
-            return null;
-        }
-        return CategoryDto.builder()
-                .id(category.getId())
-                .name(category.getName())
-                .build();
-    }
+@Mapper(componentModel = "spring")
+public interface CategoryMapper {
 
     /**
      * Преобразует DTO создания в сущность.
@@ -33,26 +19,23 @@ public class CategoryMapper {
      * @param newCategoryDto DTO для создания
      * @return сущность категории
      */
-    public Category toEntity(NewCategoryDto newCategoryDto) {
-        if (newCategoryDto == null) {
-            return null;
-        }
-        return Category.builder()
-                .name(newCategoryDto.getName())
-                .build();
-    }
+    @Mapping(target = "id", ignore = true)
+    Category toEntity(NewCategoryDto newCategoryDto);
+
+    /**
+     * Преобразует сущность в DTO.
+     *
+     * @param category сущность категории
+     * @return DTO категории
+     */
+    CategoryDto toDto(Category category);
 
     /**
      * Обновляет существующую сущность из DTO.
      *
-     * @param categoryDto DTO с данными
-     * @param category    существующая сущность
-     * @return обновленная сущность
+     * @param dto      DTO с данными для обновления
+     * @param category существующая сущность
      */
-    public Category updateEntity(CategoryDto categoryDto, Category category) {
-        if (categoryDto.getName() != null) {
-            category.setName(categoryDto.getName());
-        }
-        return category;
-    }
+    @Mapping(target = "id", ignore = true)
+    void updateEntityFromDto(NewCategoryDto dto, @MappingTarget Category category);
 }
